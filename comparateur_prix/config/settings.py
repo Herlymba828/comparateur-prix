@@ -290,15 +290,49 @@ SPECTACULAR_SETTINGS = {
 
 # SimpleJWT configuration (si activé via USE_JWT_AUTH)
 from datetime import timedelta  # noqa: E402
-SIMPLE_JWT = {
+JWT_ALG = os.getenv('JWT_ALGORITHM', 'HS256').upper()
+
+def _read_file_or_none(path: str):
+    try:
+        if not path:
+            return None
+        # Résoudre chemin relatif par rapport à BASE_DIR
+        if not os.path.isabs(path):
+            path = os.path.join(BASE_DIR, path)
+        if os.path.exists(path):
+            with open(path, 'r', encoding='utf-8') as f:
+                return f.read()
+    except Exception:
+        pass
+    return None
+
+_simple_jwt_common = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=int(os.getenv('JWT_ACCESS_MIN', '15'))),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=int(os.getenv('JWT_REFRESH_DAYS', '7'))),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
-    'ALGORITHM': 'HS256',
-    'SIGNING_KEY': os.getenv('JWT_SIGNING_KEY', SECRET_KEY),
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
+
+if JWT_ALG == 'RS256':
+    _priv_path = os.getenv('JWT_PRIVATE_KEY_PATH')
+    _pub_path = os.getenv('JWT_PUBLIC_KEY_PATH')
+    _priv_pem = _read_file_or_none(_priv_path)
+    _pub_pem = _read_file_or_none(_pub_path)
+    if not (_priv_pem and _pub_pem):
+        raise ImproperlyConfigured('For RS256, set JWT_PRIVATE_KEY_PATH and JWT_PUBLIC_KEY_PATH to valid PEM files')
+    SIMPLE_JWT = {
+        **_simple_jwt_common,
+        'ALGORITHM': 'RS256',
+        'SIGNING_KEY': _priv_pem,
+        'VERIFYING_KEY': _pub_pem,
+    }
+else:
+    SIMPLE_JWT = {
+        **_simple_jwt_common,
+        'ALGORITHM': 'HS256',
+        'SIGNING_KEY': os.getenv('JWT_SIGNING_KEY', SECRET_KEY),
+    }
 
 # CORS configuration (adjust origins via env)
 if DEBUG:
