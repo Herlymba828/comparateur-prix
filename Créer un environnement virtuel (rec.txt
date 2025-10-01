@@ -1,0 +1,79 @@
+Créer un environnement virtuel (recommandé)
+bash
+# Installer virtualenv si nécessaire
+pip install virtualenv
+
+# Créer l'environnement
+python -m venv venv
+
+# Activer l'environnement
+# Sur Windows:
+venv\Scripts\activate
+
+2. Installation de Django
+bash
+# Installer Django
+pip install django
+
+# Vérifier l'installation
+python -m django --version
+
+3. Création du projet
+bash
+# Créer le projet Django
+django-admin startproject comparateur_prix
+
+# Se déplacer dans le dossier
+cd comparateur_prix
+
+ Création des applications
+bash
+# Créer les applications (dans le dossier comparateur_prix/)
+python manage.py startapp utilisateurs
+python manage.py startapp produits
+python manage.py startapp magasins
+python manage.py startapp prix
+python manage.py startapp recommandations
+python manage.py startapp analyses
+python manage.py startapp api
+
+# Créer un superuser
+python manage.py createsuperuser
+
+# Installer les dépendances 
+
+pip install -r requirements.txt
+
+# Créer les migrations pour toutes les applications
+python manage.py makemigrations
+
+python manage.py migrate
+
+# Voir les migrations en attente
+python manage.py showmigrations
+
+# demarrer le script des services
+powershell -ExecutionPolicy Bypass -File .\scripts\start_services.ps1 -AutoPort -ServerPort 8001
+
+# Pour lancer l'applications
+python manage.py runserver 127.0.0.1:8001
+
+# Import DGCCRF automatisé et services d'arrière-plan
+
+## Redis via Docker (recommandé sous Windows)
+docker start redis
+# Si le conteneur n'existe pas encore, le script .\scripts\start_services.ps1 le créera automatiquement
+
+## Celery Worker (exécute les tâches)
+
+# pour lancer le scraper
+python scripts/mise_a_jour_analyses.py
+
+# pour lancer le scraper
+python scripts/mise_a_jour_magasins.py
+
+# pour lancer le scraper
+python scripts/mise_a_jour_utilisateurs.py
+
+# pour lancer le script de celery
+celery -A config.celery:app worker -l info -P solo
