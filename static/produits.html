@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Produits - Comparateur de Prix{% endblock %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="{% static 'css/components/products.css' %}">
+{% endblock %}
+
+{% block content %}
+  <h1>Nos produits</h1>
+  <p>Découvrez tous nos produits disponibles</p>
+
+  <div class="filters">
+    <select id="category-filter">
+      <option value="">Toutes catégories</option>
+      <option value="alimentaire">Alimentaire</option>
+      <option value="electronique">Électronique</option>
+      <option value="maison">Maison</option>
+    </select>
+    <select id="price-filter">
+      <option value="">Tous les prix</option>
+      <option value="0-20">Moins de 20€</option>
+      <option value="20-50">20€ - 50€</option>
+      <option value="50-100">50€ - 100€</option>
+      <option value="100+">Plus de 100€</option>
+    </select>
+    <select id="store-filter">
+      <option value="">Tous les magasins</option>
+      <option value="carrefour">Carrefour</option>
+      <option value="auchan">Auchan</option>
+      <option value="leclerc">Leclerc</option>
+    </select>
+  </div>
+
+  <div class="products-grid" id="products-container">
+    <!-- Les produits seront chargés ici par JavaScript -->
+  </div>
+{% endblock %}
+
+{% block extra_scripts %}
+  <script defer src="{% static 'js/api.js' %}"></script>
+  <script defer src="{% static 'js/main.js' %}"></script>
+  <script defer src="{% static 'js/search.js' %}"></script>
+{% endblock %}

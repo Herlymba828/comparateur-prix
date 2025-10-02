@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Comparateur de Prix - Accueil{% endblock %}
+
+{% block content %}
+  <section class="hero">
+    <h1>Comparez les prix, économisez intelligemment</h1>
+    <p>Trouvez les meilleures offres dans vos magasins préférés</p>
+    <div class="search-bar">
+      <input type="text" placeholder="Rechercher un produit...">
+      <button>🔍</button>
+    </div>
+  </section>
+
+  <section class="features">
+    <div class="feature-card">
+      <h3>📊 Produits</h3>
+      <p>Découvrez des milliers de produits</p>
+      <a href="/produits/" class="btn">Explorer</a>
+    </div>
+    <div class="feature-card">
+      <h3>🏪 Magasins</h3>
+      <p>Comparez les prix entre magasins</p>
+      <a href="/magasins/" class="btn">Découvrir</a>
+    </div>
+    <div class="feature-card">
+      <h3>⭐ Recommandations</h3>
+      <p>Recevez des suggestions personnalisées</p>
+      <a href="/recommandations/" class="btn">Voir</a>
+    </div>
+  </section>
+
+  <section class="popular-products">
+    <h2>Produits populaires</h2>
+    <div class="products-grid" id="popular-products">
+      <!-- Produits chargés par JS -->
+    </div>
+  </section>
+{% endblock %}
+
+{% block extra_scripts %}
+  <script defer src="{% static 'js/api.js' %}"></script>
+  <script defer src="{% static 'js/main.js' %}"></script>
+{% endblock %}

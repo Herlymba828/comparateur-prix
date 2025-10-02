@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Inscription - Comparateur de Prix{% endblock %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="{% static 'css/components/forms.css' %}">
+{% endblock %}
+
+{% block content %}
+  <div class="auth-container">
+    <div class="auth-form">
+      <h1>Inscription</h1>
+      <p>Créez votre compte gratuit</p>
+
+      <form id="register-form">
+        <div class="form-group">
+          <label for="name">Nom complet</label>
+          <input type="text" id="name" name="name" required>
+        </div>
+
+        <div class="form-group">
+          <label for="email">Email</label>
+          <input type="email" id="email" name="email" required>
+        </div>
+
+        <div class="form-group">
+          <label for="password">Mot de passe</label>
+          <input type="password" id="password" name="password" required>
+        </div>
+
+        <div class="form-group">
+          <label for="confirm-password">Confirmer le mot de passe</label>
+          <input type="password" id="confirm-password" name="confirm-password" required>
+        </div>
+
+        <button type="submit" class="btn btn-full">Créer un compte</button>
+      </form>
+
+      <div class="auth-divider" style="display:flex; align-items:center; gap:12px; margin:16px 0;">
+        <hr style="flex:1; border:none; border-top:1px solid #e5e7eb;">
+        <span style="color:#6b7280; font-size:14px; white-space:nowrap;">Ou s'inscrire avec</span>
+        <hr style="flex:1; border:none; border-top:1px solid #e5e7eb;">
+      </div>
+
+      <div class="social-buttons" style="display:flex; flex-direction:column; gap:10px;">
+        <a class="btn btn-outline" href="/oauth/login/google-oauth2/?next=/" style="display:flex; align-items:center; justify-content:center; gap:10px;">
+          <span style="font-weight:600;">Google</span>
+        </a>
+        <a class="btn btn-outline" href="/oauth/login/facebook/?next=/" style="display:flex; align-items:center; justify-content:center; gap:10px;">
+          <span style="font-weight:600;">Facebook</span>
+        </a>
+        <a class="btn btn-outline" href="/oauth/login/apple-id/?next=/" style="display:flex; align-items:center; justify-content:center; gap:10px;">
+          <span style="font-weight:600;">Apple</span>
+        </a>
+      </div>
+
+      <p class="auth-link">
+        Déjà un compte ? <a href="/connexion/">Se connecter</a>
+      </p>
+    </div>
+  </div>
+{% endblock %}
+
+{% block extra_scripts %}
+  <script defer src="{% static 'js/main.js' %}"></script>
+  <script defer src="{% static 'js/auth.js' %}"></script>
+{% endblock %}

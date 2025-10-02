@@ -1,0 +1,38 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="x-ua-compatible" content="ie=edge" />
+  <title>{% block title %}Comparateur de Prix{% endblock %}</title>
+
+  <!-- Preload critical CSS -->
+  <link rel="preload" href="{% static 'css/style.css' %}" as="style" />
+
+  <!-- Global styles -->
+  <link rel="stylesheet" href="{% static 'css/style.css' %}" />
+  <link rel="stylesheet" href="{% static 'css/components/header.css' %}" />
+  <link rel="stylesheet" href="{% static 'css/components/footer.css' %}" />
+  <link rel="stylesheet" href="{% static 'css/components/cards.css' %}" />
+
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  <!-- Header placeholder for JS injection -->
+  <div id="header"></div>
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- Footer placeholder for JS injection -->
+  <div id="footer"></div>
+
+  <!-- Global scripts (defer to avoid blocking render) -->
+  <script defer src="{% static 'js/api.js' %}?v=2"></script>
+  <script defer src="{% static 'js/main.js' %}?v=2"></script>
+
+  {% block extra_scripts %}{% endblock %}
+</body>
+</html>
