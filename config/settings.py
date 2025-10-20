@@ -41,7 +41,7 @@ if not SECRET_KEY:
     else:
         raise ImproperlyConfigured('DJANGO_SECRET_KEY must be set in production')
 
-ALLOWED_HOSTS = [h for h in os.getenv('DJANGO_ALLOWED_HOSTS', '').split(',') if h] or []
+ALLOWED_HOSTS = [h for h in os.getenv('DJANGO_ALLOWED_HOSTS', '').split(',') if h] or (['localhost', '127.0.0.1'] if DEBUG else [])
 
 # Utiliser le modèle utilisateur personnalisé
 AUTH_USER_MODEL = 'utilisateurs.Utilisateur'
@@ -76,6 +76,8 @@ INSTALLED_APPS = [
     'apps.analyses',
     'apps.api',
 ]
+
+# Définir les origines CORS via variables d'environnement (voir plus bas). Éviter des valeurs en dur ici.
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -124,7 +126,7 @@ DATABASES = {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': os.getenv('POSTGRES_DB', 'soutenance2'),
         'USER': os.getenv('POSTGRES_USER', 'postgres'),
-        'PASSWORD': os.getenv('POSTGRES_PASSWORD', 'BlackEurtz8282@'),
+        'PASSWORD': os.getenv('POSTGRES_PASSWORD', ''),
         'HOST': os.getenv('POSTGRES_HOST', 'localhost'),
         'PORT': os.getenv('POSTGRES_PORT', '5432'),
         'OPTIONS': {
@@ -133,6 +135,11 @@ DATABASES = {
         },
     },
 }
+
+# Admin URL paramétrable (obfuscation basique en prod)
+ADMIN_URL = os.getenv('DJANGO_ADMIN_URL', 'admin/')
+if not ADMIN_URL.endswith('/'):
+    ADMIN_URL = ADMIN_URL + '/'
 
 # Optional SQLite fallback for development
 if os.getenv('USE_SQLITE_DEV', 'False').lower() in ('1', 'true', 'yes', 'y') and DEBUG:
@@ -170,7 +177,6 @@ SOCIAL_AUTH_APPLE_ID_KEY = os.getenv('APPLE_KEY_ID')
 SOCIAL_AUTH_APPLE_ID_SECRET = os.getenv('APPLE_PRIVATE_KEY_PEM')
 
 ENABLE_APPLE_AUTH = all([
-    SOCIAL_AUTH_APPLE_ID_CLIENT,
     SOCIAL_AUTH_APPLE_ID_TEAM,
     SOCIAL_AUTH_APPLE_ID_KEY,
     SOCIAL_AUTH_APPLE_ID_SECRET,
@@ -190,10 +196,13 @@ LOGIN_URL = '/connexion/'
 LOGIN_REDIRECT_URL = '/'
 LOGOUT_REDIRECT_URL = '/'
 
+# Social Auth error handling
+SOCIAL_AUTH_LOGIN_ERROR_URL = '/oauth/error/'
+# In production we generally don't want to raise raw exceptions to users
+SOCIAL_AUTH_RAISE_EXCEPTIONS = False
+
 # Use JSONField if available for storing extra data
 SOCIAL_AUTH_JSONFIELD_ENABLED = True
-
-# Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
 
 AUTH_PASSWORD_VALIDATORS = [
@@ -236,12 +245,8 @@ CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = os.getenv('CELERY_BROKER_CONNECTION_
 STATIC_URL = 'static/'
 # Collected static files (e.g., via collectstatic)
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-# Source static directories to be served in development
-STATICFILES_DIRS = [
-    BASE_DIR / 'static',
-    # Temporary: keep templates assets until they are moved under static/
-    BASE_DIR / 'templates',
-]
+# Aucune source statique côté projet (frontend supprimé). Les fichiers statiques collectés iront dans STATIC_ROOT.
+STATICFILES_DIRS = []
 
 # Media files
 MEDIA_URL = '/media/'
@@ -254,15 +259,14 @@ DEFAULT_AUTH_CLASSES = [
 ]
 if USE_JWT_AUTH:
     DEFAULT_AUTH_CLASSES.append('rest_framework_simplejwt.authentication.JWTAuthentication')
-DEFAULT_AUTH_CLASSES.extend([
-    'rest_framework.authentication.SessionAuthentication',
-    'rest_framework.authentication.BasicAuthentication',
-])
+# SessionAuthentication utile pour l'admin/browsable API. BasicAuthentication seulement en dev.
+DEFAULT_AUTH_CLASSES.append('rest_framework.authentication.SessionAuthentication')
+if DEBUG:
+    DEFAULT_AUTH_CLASSES.append('rest_framework.authentication.BasicAuthentication')
 
+_default_perms = ['rest_framework.permissions.AllowAny'] if DEBUG else ['rest_framework.permissions.IsAuthenticatedOrReadOnly']
 REST_FRAMEWORK = {
-    'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.AllowAny',
-    ],
+    'DEFAULT_PERMISSION_CLASSES': _default_perms,
     'DEFAULT_AUTHENTICATION_CLASSES': DEFAULT_AUTH_CLASSES,
     'DEFAULT_FILTER_BACKENDS': [
         'django_filters.rest_framework.DjangoFilterBackend'
@@ -347,6 +351,9 @@ CORS_ALLOWED_ORIGINS = [o for o in os.getenv('CORS_ALLOWED_ORIGINS', '').split('
 # Optional: trust proxies and CSRF origins if served behind reverse proxy
 CSRF_TRUSTED_ORIGINS = [o for o in os.getenv('CSRF_TRUSTED_ORIGINS', '').split(',') if o]
 
+# Google Maps API key (used for Distance Matrix / JS Maps)
+GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY')
+
 # Cache (Redis si disponible en prod, sinon cache local mémoire en dev)
 REDIS_URL = os.getenv('REDIS_URL')
 # Permet d'utiliser une base Redis distincte pour le cache Django si souhaité
@@ -384,6 +391,8 @@ if not DEBUG:
     SECURE_CONTENT_TYPE_NOSNIFF = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
+    SESSION_COOKIE_HTTPONLY = True
+    CSRF_COOKIE_HTTPONLY = True
     SECURE_SSL_REDIRECT = True
     # Si derrière un reverse proxy (ex: nginx/elb) qui ajoute X-Forwarded-Proto
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')

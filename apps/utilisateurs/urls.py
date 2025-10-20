@@ -40,6 +40,9 @@ jwt_urlpatterns = [
     path('api/auth/activation/confirmer/<str:token>/', 
          views.activer_compte, 
          name='activation-confirmer'),
+    path('api/auth/activation/confirmer', 
+         views.activer_compte_query, 
+         name='activation-confirmer-query'),
     path('api/auth/activation/renvoyer/', 
          views.UtilisateurViewSet.as_view({'post': 'renvoyer_activation'}), 
          name='activation-renvoyer'),
@@ -66,3 +69,8 @@ extra_patterns = [
 ]
 
 urlpatterns += extra_patterns
+
+# Universal/App Links web landing page
+urlpatterns += [
+    path('activate/<str:token>', views.web_activate_page, name='web-activate'),
+]

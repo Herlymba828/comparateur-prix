@@ -15,23 +15,30 @@ from datetime import datetime
 import os
 from django.conf import settings
 from django.core.cache import cache
+from django.db.models import Count
 
 logger = logging.getLogger(__name__)
 
 class ModeleRecommandationContenu:
     """Modèle de recommandation basé sur le contenu des produits"""
     
-    def __init__(self, n_composantes: int = 100):
+    def __init__(self, n_composantes: int = 100, use_embeddings: bool = False, embedding_model_name: str = 'paraphrase-multilingual-MiniLM-L12-v2'):
         self.n_composantes = n_composantes
+        # Certaines versions de scikit-learn n'acceptent que 'english'.
+        # On évite l'erreur en mettant None (sans stopwords) pour compatibilité.
         self.vectoriseur = TfidfVectorizer(
             max_features=5000,
-            stop_words='french',
+            stop_words=None,
             ngram_range=(1, 2)
         )
         self.svd = TruncatedSVD(n_components=n_composantes, random_state=42)
         self.matrice_similarite = None
         self.produits_data = None
         self.est_entraine = False
+        # Embeddings optionnels
+        self.use_embeddings = use_embeddings
+        self.embedding_model_name = embedding_model_name
+        self._embedder = None
         
     def preparer_donnees(self, produits_data: List[Dict]) -> pd.DataFrame:
         """Prépare les données pour l'entraînement"""
@@ -71,11 +78,21 @@ class ModeleRecommandationContenu:
                 self.est_entraine = False
                 return
             
-            # Vectorisation TF-IDF
-            matrice_tfidf = self.vectoriseur.fit_transform(df_produits['caracteristiques'])
-            
-            # Réduction de dimension
-            matrice_reduite = self.svd.fit_transform(matrice_tfidf)
+            # Embeddings (si activés), sinon TF-IDF + SVD
+            if self.use_embeddings:
+                try:
+                    from sentence_transformers import SentenceTransformer  # type: ignore
+                    if self._embedder is None:
+                        self._embedder = SentenceTransformer(self.embedding_model_name)
+                    matrice_reduite = self._embedder.encode(df_produits['caracteristiques'].tolist(), show_progress_bar=False)
+                except Exception as e:
+                    logger.warning(f"Embeddings indisponibles, fallback TF-IDF. Raison: {e}")
+                    self.use_embeddings = False
+                    matrice_tfidf = self.vectoriseur.fit_transform(df_produits['caracteristiques'])
+                    matrice_reduite = self.svd.fit_transform(matrice_tfidf)
+            else:
+                matrice_tfidf = self.vectoriseur.fit_transform(df_produits['caracteristiques'])
+                matrice_reduite = self.svd.fit_transform(matrice_tfidf)
             
             # Calcul de similarité cosinus
             self.matrice_similarite = cosine_similarity(matrice_reduite)
@@ -166,9 +183,11 @@ class ModelePredictionPrix:
         """Prépare les données pour l'entraînement"""
         df = pd.DataFrame(donnees_prix)
         
-        # Nettoyage
+        # Nettoyage / conversions numériques (prix peut être Decimal)
+        if 'prix' in df.columns:
+            df['prix'] = pd.to_numeric(df['prix'], errors='coerce')
         df = df.dropna(subset=['prix'])
-        df = df[df['prix'] > 0]
+        df = df[df['prix'].astype(float) > 0]
         
         # Feature engineering
         if 'date' in df.columns:
@@ -178,20 +197,31 @@ class ModelePredictionPrix:
             df['jour_semaine'] = df['date'].dt.dayofweek
         
         # Encodage des variables catégorielles
-        colonnes_categorielles = ['categorie', 'marque', 'magasin', 'ville']
+        colonnes_categorielles = ['categorie', 'sous_categorie', 'marque', 'magasin', 'ville', 'type_magasin', 'zone', 'type_prix', 'unite_mesure']
         
         for col in colonnes_categorielles:
             if col in df.columns:
                 if col not in self.encodeurs:
                     self.encodeurs[col] = LabelEncoder()
                     df[col] = self.encodeurs[col].fit_transform(df[col].fillna('Inconnu'))
+                else:
+                    df[col] = self.encodeurs[col].transform(df[col].fillna('Inconnu'))
         
         # Sélection des caractéristiques
-        caracteristiques = [col for col in ['categorie', 'marque', 'magasin', 'ville', 'annee', 'mois'] 
-                          if col in df.columns]
+        # Conversions numériques additionnelles
+        if 'quantite_unite' in df.columns:
+            df['quantite_unite'] = pd.to_numeric(df['quantite_unite'], errors='coerce').fillna(0.0)
+        numeriques_potentielles = ['annee', 'mois', 'jour_semaine', 'quantite_unite']
+        caracteristiques = [
+            col for col in (
+                ['categorie', 'sous_categorie', 'marque', 'magasin', 'ville', 'type_magasin', 'zone', 'type_prix', 'unite_mesure']
+                + numeriques_potentielles
+            ) if col in df.columns
+        ]
         
         X = df[caracteristiques]
-        y = df['prix']
+        # Transformation log1p pour stabiliser
+        y = np.log1p(df['prix'].astype(float))
         
         return X, y, caracteristiques
     
@@ -263,8 +293,8 @@ class ModelePredictionPrix:
         # Sélection des features
         X = df[self.caracteristiques]
         X_scaled = self.scalers['X'].transform(X)
-        
-        return float(self.meilleur_modele.predict(X_scaled)[0])
+        y_log = float(self.meilleur_modele.predict(X_scaled)[0])
+        return float(np.expm1(y_log))
 
 class GestionnaireRecommandations:
     """Gestionnaire principal des recommandations"""
@@ -283,18 +313,39 @@ class GestionnaireRecommandations:
             
             # Charger les produits
             # Ne demander que des champs existants sur Produit
-            produits = list(Produit.objects.values(
-                'id', 'nom'
-            ))
+            produits_qs = Produit.objects.select_related('categorie', 'marque').values(
+                'id', 'nom',
+                'categorie__nom',
+                'marque__nom',
+                'description',
+            )
+            # Si votre modèle Produit expose une sous-catégorie via Homologation ou autre, adapter ici.
+            # On mappe vers les clés attendues par le modèle contenu
+            produits = []
+            for r in produits_qs:
+                produits.append({
+                    'id': r['id'],
+                    'nom': r.get('nom') or '',
+                    'categorie': r.get('categorie__nom') or '',
+                    'marque': r.get('marque__nom') or '',
+                    'description': r.get('description') or '',
+                })
             
             # Charger les données de prix pour l'entraînement depuis Prix (champs existants)
             prix_qs = Prix.objects.select_related(
-                'produit__categorie', 'produit__marque', 'magasin__ville'
+                'produit__categorie', 'produit__marque', 'produit__unite_mesure', 'magasin__ville'
             ).values(
                 'produit__categorie__nom',
                 'produit__marque__nom',
+                'produit__unite_mesure__symbole',
+                'produit__quantite_unite',
+                'produit__poids',
+                'produit__volume',
                 'magasin__nom',
                 'magasin__ville__nom',
+                'magasin__type',
+                'magasin__zone',
+                'type_prix',
                 'prix_actuel',
                 'date_modification'
             )[:10000]
@@ -302,9 +353,17 @@ class GestionnaireRecommandations:
             prix_data = [
                 {
                     'categorie': r.get('produit__categorie__nom'),
+                    'sous_categorie': '',
                     'marque': r.get('produit__marque__nom'),
                     'magasin': r.get('magasin__nom'),
                     'ville': r.get('magasin__ville__nom'),
+                    'type_magasin': r.get('magasin__type'),
+                    'zone': r.get('magasin__zone'),
+                    'type_prix': r.get('type_prix'),
+                    'unite_mesure': r.get('produit__unite_mesure__symbole'),
+                    'quantite_unite': r.get('produit__quantite_unite'),
+                    'poids': r.get('produit__poids'),
+                    'volume': r.get('produit__volume'),
                     'prix': r.get('prix_actuel'),
                     'date': r.get('date_modification'),
                 }
@@ -360,14 +419,11 @@ class GestionnaireRecommandations:
         """Produits les plus populaires"""
         from apps.produits.models import Produit
         
-        produits_populaires = Produit.objects.order_by('-score_popularite')[:n_recommandations]
+        produits_populaires = Produit.objects.annotate(n=Count('prix')).order_by('-n')[:n_recommandations]
         return [{
             'produit': {
                 'id': p.id,
                 'nom': p.nom,
-                'categorie': p.categorie,
-                'marque': p.marque,
-                'prix_actuel': getattr(p, 'prix_actuel', 0)
             },
             'score_similarite': 1.0,
             'algorithme': 'populaire'

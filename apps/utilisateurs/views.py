@@ -1,4 +1,5 @@
 from rest_framework import status, viewsets, permissions
+
 from rest_framework.decorators import action
 from rest_framework.response import Response
 try:
@@ -32,8 +33,9 @@ from .serializers import (
     ApplicationRemiseSerializer, StatistiquesFideliteSerializer,
     HistoriqueConnexionSerializer
 )
-from apps.utilisateurs.permissions import IsProprietaireProfil, IsAdminOrReadOnly, IsAdminOrModerator
+from apps.utilisateurs.permissions import IsProprietaireProfil, IsAdminOrReadOnly, IsAdminOrModerator, IsSuperUser
 from django.contrib.auth.models import Group
+from django.contrib.auth import authenticate, login
 from django_otp.plugins.otp_totp.models import TOTPDevice
 from django_otp import devices_for_user
 
@@ -101,6 +103,219 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
             refresh = RefreshToken.for_user(utilisateur)
             data.update({'refresh': str(refresh), 'access': str(refresh.access_token)})
         return Response(data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['post'], permission_classes=[permissions.AllowAny])
+    def connecter(self, request):
+        """Authentifie un utilisateur via username ou email. Retourne des tokens JWT si dispo.
+
+        Body JSON: { username?: str, email?: str, password: str }
+        """
+        username = request.data.get('username')
+        email = request.data.get('email')
+        password = request.data.get('password')
+        if not password or (not username and not email):
+            return Response({'detail': 'username ou email et password requis.'}, status=400)
+        # Si email fourni, le convertir en username
+        if not username and email:
+            try:
+                u = Utilisateur.objects.get(email=email)
+                username = u.username
+            except Utilisateur.DoesNotExist:
+                return Response({'detail': 'Identifiants invalides.'}, status=401)
+        user = authenticate(request=request, username=username, password=password)
+        if not user:
+            # log tentative
+            try:
+                HistoriqueConnexion.objects.create(
+                    ip_address=request.META.get('REMOTE_ADDR'),
+                    user_agent=request.META.get('HTTP_USER_AGENT', ''),
+                    reussi=False,
+                    utilisateur=Utilisateur.objects.filter(username=username).first()
+                )
+            except Exception:
+                pass
+            return Response({'detail': 'Identifiants invalides.'}, status=401)
+        if not user.is_active:
+            return Response({'detail': 'Compte inactif. Veuillez activer votre compte.'}, status=403)
+        # Créer la session
+        try:
+            login(request, user)
+        except Exception:
+            pass
+        # Log réussite
+        try:
+            HistoriqueConnexion.objects.create(
+                utilisateur=user,
+                ip_address=request.META.get('REMOTE_ADDR'),
+                user_agent=request.META.get('HTTP_USER_AGENT', ''),
+                reussi=True,
+            )
+        except Exception:
+            pass
+        payload = {'utilisateur': UtilisateurSerializer(user).data}
+        if HAS_JWT and RefreshToken is not None:
+            refresh = RefreshToken.for_user(user)
+            payload.update({'refresh': str(refresh), 'access': str(refresh.access_token)})
+        return Response(payload)
+
+    @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated])
+    def changer_mot_de_passe(self, request):
+        """Change le mot de passe de l'utilisateur authentifié.
+
+        Body JSON attendu: {
+          "ancien_mot_de_passe": str,
+          "nouveau_mot_de_passe": str,
+          "confirmation_mot_de_passe": str
+        }
+        """
+        serializer = ChangementMotDePasseSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        ancien = serializer.validated_data['ancien_mot_de_passe']
+        nouveau = serializer.validated_data['nouveau_mot_de_passe']
+
+        user = request.user
+        # Vérifier l'ancien mot de passe
+        if not user.check_password(ancien):
+            return Response({'ancien_mot_de_passe': 'Ancien mot de passe incorrect.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.set_password(nouveau)
+        user.save(update_fields=['password'])
+        return Response({'detail': 'Mot de passe mis à jour.'})
+
+    @action(detail=False, methods=['get'])
+    def statistiques_fidelite(self, request):
+        """Statistiques fidélité enrichies (fidélité + abonnement + progression)."""
+        user = request.user
+        total_achats = getattr(user, 'total_achats', Decimal('0.00')) or Decimal('0.00')
+        niveau = getattr(user, 'niveau_fidelite', 1) or 1
+        base_pct = Decimal(str(user.pourcentage_remise_fidelite or 0))
+        # Abonnement
+        abo_pct = Decimal('0')
+        abo = getattr(user, 'abonnement', None)
+        if abo and getattr(abo, 'est_valide', False):
+            try:
+                if abo.est_valide:
+                    abo_pct = Decimal(str(abo.remise_supplementaire or 0))
+            except Exception:
+                pass
+        total_pct = base_pct + abo_pct
+        # Progression vers prochain niveau selon _mettre_a_jour_niveau_fidelite
+        thresholds = [Decimal('0'), Decimal('50'), Decimal('200'), Decimal('500'), Decimal('1000')]
+        # niveaux 1..5 -> prochain seuil indexé
+        if niveau >= 5:
+            prochain_seuil = None
+            progression = Decimal('100.0')
+        else:
+            prochain_seuil = thresholds[niveau] if 1 <= niveau < 5 else Decimal('50')
+            # base du niveau courant
+            base_seuil = thresholds[niveau-1] if 2 <= niveau <= 5 else Decimal('0')
+            # progression sur l'intervalle [base_seuil, prochain_seuil]
+            intervalle = (prochain_seuil - base_seuil) or Decimal('1')
+            progression = max(Decimal('0.0'), min(Decimal('100.0'), ((total_achats - base_seuil) * Decimal('100.0')) / intervalle))
+        # Jours depuis le dernier achat
+        last_days = None
+        try:
+            if user.date_dernier_achat:
+                delta = timezone.now() - user.date_dernier_achat
+                last_days = delta.days
+        except Exception:
+            last_days = None
+        payload = {
+            'points_fidelite': int(getattr(user, 'points_fidelite', 0) or 0),
+            'niveau_fidelite': int(niveau),
+            'pourcentage_remise': str(total_pct),
+            'pourcentage_remise_fidelite': str(base_pct),
+            'pourcentage_remise_abonnement': str(abo_pct),
+            'total_achats': str(total_achats),
+            'nombre_commandes': int(getattr(user, 'nombre_commandes', 0) or 0),
+            'est_client_fidele': bool(getattr(user, 'est_client_fidele', False)),
+            'prochain_niveau_seuil': None if prochain_seuil is None else str(prochain_seuil),
+            'progression_niveau': float(progression),
+            'derniere_commande_jours': last_days,
+        }
+        s = StatistiquesFideliteSerializer(data=payload)
+        s.is_valid(raise_exception=True)
+        return Response(s.data)
+
+    @action(detail=False, methods=['get'])
+    def historique_remises(self, request):
+        """Liste (éventuelle) des remises appliquées liées à l'utilisateur courant."""
+        try:
+            qs = HistoriqueRemises.objects.filter(utilisateur=request.user)
+        except Exception:
+            qs = HistoriqueRemises.objects.none()
+        data = HistoriqueRemisesSerializer(qs, many=True).data
+        return Response({'count': len(data), 'results': data})
+
+    @action(detail=False, methods=['post'])
+    def appliquer_remise(self, request):
+        """Applique une remise combinée (fidélité + catégorie + abonnement) et journalise."""
+        s = ApplicationRemiseSerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+        produit = s.validated_data['produit']
+        prix_original = Decimal(str(s.validated_data['prix_original']))
+        user = request.user
+        # Composantes de remise
+        base_pct = Decimal(str(user.pourcentage_remise_fidelite or 0))
+        # Bonus catégorie si le produit a une catégorie
+        categorie = getattr(produit, 'categorie', None)
+        try:
+            cat_bonus = Decimal(str(user._get_remise_categorie(categorie)))  # basé sur la logique du modèle
+        except Exception:
+            cat_bonus = Decimal('0')
+        abo_bonus = Decimal('0')
+        abo = getattr(user, 'abonnement', None)
+        try:
+            if abo and abo.est_valide:
+                abo_bonus = Decimal(str(abo.remise_supplementaire or 0))
+        except Exception:
+            pass
+        total_pct = base_pct + cat_bonus + abo_bonus
+        # garde-fous
+        if total_pct < 0:
+            total_pct = Decimal('0')
+        if total_pct > 50:
+            total_pct = Decimal('50')
+        montant = (prix_original * total_pct) / Decimal('100')
+        prix_remise = prix_original - montant
+        # Déterminer le type
+        comp_fidelite = (base_pct > 0 or cat_bonus > 0)
+        comp_abo = (abo_bonus > 0)
+        if comp_fidelite and comp_abo:
+            type_remise = 'combinee'
+        elif comp_abo:
+            type_remise = 'abonnement'
+        elif comp_fidelite:
+            type_remise = 'fidelite'
+        else:
+            type_remise = 'promotion'
+        # Journaliser
+        try:
+            HistoriqueRemises.objects.create(
+                utilisateur=user,
+                produit=produit,
+                prix_original=prix_original,
+                prix_remise=prix_remise,
+                pourcentage_remise=total_pct,
+                montant_economise=montant,
+                type_remise=type_remise,
+            )
+        except Exception:
+            pass
+        return Response({
+            'produit_id': produit.id,
+            'prix_original': str(prix_original),
+            'prix_remise': str(prix_remise),
+            'pourcentage_remise': str(total_pct),
+            'montant_economise': str(montant),
+            'components': {
+                'fidelite_pct': str(base_pct),
+                'categorie_pct': str(cat_bonus),
+                'abonnement_pct': str(abo_bonus),
+            },
+            'type_remise': type_remise,
+        })
 
     @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def update_location(self, request):
@@ -295,6 +510,7 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
 from rest_framework.decorators import api_view, permission_classes  # noqa: E402
 from django.contrib.sessions.models import Session  # noqa: E402
 from django.utils import timezone  # noqa: E402
+from django.http import HttpResponse, HttpResponseBadRequest  # noqa: E402
 try:
     from rest_framework_simplejwt.tokens import OutstandingToken, BlacklistedToken  # noqa: E402
 except Exception:
@@ -318,6 +534,44 @@ def activer_compte(request, token: str):
     utilisateur.is_active = True
     utilisateur.save(update_fields=['est_verifie', 'is_active'])
     return Response({'detail': 'Compte activé avec succès.'})
+
+@api_view(["GET"]) 
+@permission_classes([permissions.AllowAny])
+def activer_compte_query(request):
+    """Variante qui accepte le token en query param: /api/auth/activation/confirmer?token=..."""
+    token = request.query_params.get('token') or request.GET.get('token')
+    if not token:
+        return Response({'detail': 'Paramètre token requis.'}, status=status.HTTP_400_BAD_REQUEST)
+    data = verifier_token_activation(token)
+    if not data:
+        return Response({'detail': 'Token invalide ou expiré.'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        utilisateur = Utilisateur.objects.get(id=data['uid'], email=data['email'])
+    except Utilisateur.DoesNotExist:
+        return Response({'detail': 'Utilisateur introuvable.'}, status=status.HTTP_404_NOT_FOUND)
+    if utilisateur.est_verifie and utilisateur.is_active:
+        return Response({'detail': 'Compte déjà activé.'})
+    utilisateur.est_verifie = True
+    utilisateur.is_active = True
+    utilisateur.save(update_fields=['est_verifie', 'is_active'])
+    return Response({'detail': 'Compte activé avec succès.'})
+
+def web_activate_page(request, token: str):
+    """Page d'atterrissage web pour Universal/App Links: /activate/<token>
+    Active le compte puis affiche un résultat HTML minimal.
+    """
+    data = verifier_token_activation(token)
+    if not data:
+        return HttpResponseBadRequest('<h1>Activation échouée</h1><p>Token invalide ou expiré.</p>')
+    try:
+        utilisateur = Utilisateur.objects.get(id=data['uid'], email=data['email'])
+    except Utilisateur.DoesNotExist:
+        return HttpResponseBadRequest('<h1>Activation échouée</h1><p>Utilisateur introuvable.</p>')
+    if not (utilisateur.est_verifie and utilisateur.is_active):
+        utilisateur.est_verifie = True
+        utilisateur.is_active = True
+        utilisateur.save(update_fields=['est_verifie', 'is_active'])
+    return HttpResponse('<h1>Activation réussie</h1><p>Votre compte est activé. Vous pouvez ouvrir l\'application et vous connecter.</p>')
 
 @api_view(["POST"])
 @permission_classes([permissions.AllowAny])

@@ -43,10 +43,19 @@ class Magasin(models.Model):
     # Slug unique globalement pour simplicité; index déjà défini plus bas
     slug = models.SlugField(max_length=220, unique=True, blank=True)
     type = models.CharField(max_length=20, choices=CHOIX_TYPE)
+    # Nouveau alias logique pour répondre aux specs: type_magasin
+    type_magasin = models.CharField(max_length=20, choices=CHOIX_TYPE, blank=True)
     adresse = models.CharField(max_length=255, blank=True)
     ville = models.ForeignKey(Ville, on_delete=models.PROTECT, related_name='magasins')
+    # Nouvelles métadonnées de localisation/zone (textuelles)
+    localisation = models.CharField(max_length=120, blank=True, default='')
+    zone = models.CharField(max_length=60, blank=True, default='')
     latitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
     longitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
+    formatted_address = models.CharField(max_length=255, blank=True, default='')
+    place_id = models.CharField(max_length=100, blank=True, default='')
+    geocoded_at = models.DateTimeField(blank=True, null=True)
+    geocoding_provider = models.CharField(max_length=30, blank=True, default='')
     actif = models.BooleanField(default=True)
     date_creation = models.DateTimeField(auto_now_add=True)
     date_modification = models.DateTimeField(auto_now=True)
@@ -57,6 +66,7 @@ class Magasin(models.Model):
         indexes = [
             models.Index(fields=['slug']),
             models.Index(fields=['ville']),
+            models.Index(fields=['zone']),
         ]
         ordering = ['nom']
 

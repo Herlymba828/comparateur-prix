@@ -5,6 +5,11 @@ from django.conf import settings
 from django.utils import timezone
 from decimal import Decimal
 import os
+import sys
+import subprocess
+from pathlib import Path
+import json
+import logging
 
 from .models import AlertePrix
 from .models import Prix
@@ -116,6 +121,99 @@ def import_homologations_task(limit: int | None = None, since_date: str | None =
         cmd.append("--dry-run")
     call_command(*cmd)
     return 0
+
+
+@shared_task(name="dgccrf_scrape_report_task")
+def dgccrf_scrape_report_task(limit: int | None = None,
+                              unified: bool = True,
+                              save: bool = True,
+                              only_changed: bool = True,
+                              csv_out: str | None = None,
+                              sql_out: str | None = None,
+                              report_out: str | None = None) -> int:
+    """Exécute le scraper DGCCRF via le script Python avec options d'export et de persistance.
+    Utilise les variables d'environnement si les arguments ne sont pas fournis.
+    """
+    base_dir = Path(getattr(settings, 'BASE_DIR', Path(__file__).resolve().parents[3]))
+    script_path = base_dir / 'scripts' / 'scraper_dgccrf.py'
+    if not script_path.exists():
+        return 1
+
+    args = [sys.executable, str(script_path)]
+    if limit is not None:
+        args += ['--limit', str(limit)]
+    if unified:
+        args.append('--unified')
+    if save:
+        args.append('--save')
+    if only_changed:
+        args.append('--only-changed')
+    if csv_out:
+        args += ['--csv', csv_out]
+    if sql_out:
+        args += ['--sql', sql_out]
+    if report_out:
+        args += ['--report', report_out]
+
+    env = os.environ.copy()
+    # Respecter les réglages DGCCRF_* existants
+    try:
+        completed = subprocess.run(args, env=env, capture_output=True, text=True, timeout=3600)
+        if completed.returncode != 0:
+            # Log minimal en cas d'échec
+            print(completed.stdout)
+            print(completed.stderr)
+            return completed.returncode
+        return 0
+    except Exception:
+        return 1
+
+
+@shared_task(name="monitor_dgccrf_report_task")
+def monitor_dgccrf_report_task(report_path: str | None = None) -> int:
+    """Vérifie le rapport DGCCRF et alerte si anomalies (ex: total_items == 0).
+    Envoie un email si settings.EMAIL_HOST est configuré, sinon log un warning.
+    """
+    logger = logging.getLogger(__name__)
+    try:
+        base_dir = Path(getattr(settings, 'BASE_DIR', Path(__file__).resolve().parents[3]))
+        target = Path(report_path or (base_dir / 'data' / 'dgccrf_report.json'))
+        if not target.exists():
+            msg = f"Rapport DGCCRF introuvable: {target}"
+            logger.warning(msg)
+            try:
+                send_mail(
+                    subject="[Alerte] Rapport DGCCRF introuvable",
+                    message=msg,
+                    from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', None),
+                    recipient_list=[a[1] for a in getattr(settings, 'ADMINS', [])],
+                    fail_silently=True,
+                )
+            except Exception:
+                pass
+            return 1
+        data = json.loads(target.read_text(encoding='utf-8'))
+        total = int(data.get('total_items') or 0)
+        if total == 0:
+            msg = f"Rapport DGCCRF: aucun item collecté ({target})"
+            logger.warning(msg)
+            try:
+                send_mail(
+                    subject="[Alerte] DGCCRF: aucun item collecté",
+                    message=msg,
+                    from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', None),
+                    recipient_list=[a[1] for a in getattr(settings, 'ADMINS', [])],
+                    fail_silently=True,
+                )
+            except Exception:
+                pass
+            return 2
+        logger.info(f"Rapport DGCCRF OK: total_items={total}")
+        return 0
+    except Exception as exc:
+        logger = logging.getLogger(__name__)
+        logger.error(f"Échec monitoring rapport DGCCRF: {exc}")
+        return 3
 
 
 # --- Scrape & Ingest pipeline ---

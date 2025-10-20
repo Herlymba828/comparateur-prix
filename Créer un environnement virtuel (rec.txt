@@ -66,8 +66,11 @@ docker start redis
 
 ## Celery Worker (exécute les tâches)
 
-# pour lancer le scraper
-python scripts/mise_a_jour_analyses.py
+# pour lancer le scraper avec persistence
+python scripts/scraper_dgccrf.py --sources prix_homologue,liste_produit,produit_petrolier --save --unified --report data/dgccrf_report.json
+
+# pour lancer le scraper sans persistence
+python scripts/scraper_dgccrf.py --sources prix_homologue,liste_produit,produit_petrolier --save --unified --report data/dgccrf_report.json
 
 # pour lancer le scraper
 python scripts/mise_a_jour_magasins.py
@@ -77,3 +80,12 @@ python scripts/mise_a_jour_utilisateurs.py
 
 # pour lancer le script de celery
 celery -A config.celery:app worker -l info -P solo
+
+# pour initialiser la base de données 
+psql -h localhost -p 5432 -U postgres -d postgres -f .\init_db.sql
+
+# Pour lancer le scraper Elasticsearch
+docker run -d --name es01 -p 9200:9200 -e "discovery.type=single-node" -e "xpack.security.enabled=false" docker.elastic.co/elasticsearch/elasticsearch:8.13.4
+
+# Script pour géocoder les magasins
+python manage.py geocode_magasins --only-missing --limit 200

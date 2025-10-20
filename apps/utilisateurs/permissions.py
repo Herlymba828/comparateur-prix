@@ -43,5 +43,8 @@ class IsAdminOrModerator(HasRole):
     required_roles = ("admin", "moderateur")
 
 
-class IsPremium(HasRole):
-    required_roles = ("premium",)
+class IsSuperUser(BasePermission):
+    """Autorise uniquement les superutilisateurs (is_superuser=True)."""
+
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated and request.user.is_superuser)

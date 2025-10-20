@@ -20,4 +20,8 @@ except AttributeError:
 urlpatterns = [
     path('api/', include(router.urls)),
     path('api/graph/latest/', views.latest_graph, name='graph-latest'),
+    path('api/stats/prix/overview', views.stats_prix_overview, name='stats-prix-overview'),
+    path('api/stats/magasins_plus_actifs', views.stats_magasins_plus_actifs, name='stats-magasins-plus-actifs'),
+    path('api/stats/produits_plus_recherches', views.stats_produits_plus_recherches, name='stats-produits-plus-recherches'),
+    path('api/stats/tendances', views.stats_tendances, name='stats-tendances'),
 ]

@@ -5,7 +5,7 @@ from django.contrib.contenttypes.models import ContentType
 # This command initializes role groups used across the application:
 # - admin
 # - moderateur
-# - premium
+# - user
 # It will create groups if missing and (optionally) attach a baseline set of permissions.
 # You can run it safely multiple times; it is idempotent.
 
@@ -19,13 +19,13 @@ BASELINE_PERMS = {
     "moderateur": [
         ("auth", "user", ["change", "view"]),
     ],
-    "premium": [
-        # No global model perms by default; application logic checks IsPremium for premium-only features
+    "user": [
+        # Rôle de base sans permissions globales; accès déterminé par la logique applicative
     ],
 }
 
 class Command(BaseCommand):
-    help = "Initialize role groups: admin, moderateur, premium (idempotent). Optionally attach baseline permissions."
+    help = "Initialize role groups: admin, moderateur, user (idempotent). Optionally attach baseline permissions."
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -36,7 +36,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         created = []
-        for group_name in ["admin", "moderateur", "premium"]:
+        for group_name in ["admin", "moderateur", "user"]:
             grp, was_created = Group.objects.get_or_create(name=group_name)
             if was_created:
                 created.append(group_name)

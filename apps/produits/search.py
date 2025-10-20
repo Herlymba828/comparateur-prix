@@ -95,6 +95,9 @@ def ensure_indices():
 
 
 def index_product(produit):
+    enabled = os.getenv('SEARCH_INDEX_ENABLED', 'true').lower() in ('1','true','yes','y')
+    if not enabled:
+        return
     es = get_es_client()
     doc = make_product_doc(produit)
     es.index(index=INDEX_PRODUCTS, id=produit.id, document=doc, refresh="wait_for")
@@ -103,6 +106,9 @@ def index_product(produit):
 
 
 def delete_product(product_id):
+    enabled = os.getenv('SEARCH_INDEX_ENABLED', 'true').lower() in ('1','true','yes','y')
+    if not enabled:
+        return
     es = get_es_client()
     try:
         es.delete(index=INDEX_PRODUCTS, id=product_id, refresh="wait_for")

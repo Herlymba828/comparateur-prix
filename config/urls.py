@@ -16,39 +16,39 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
-from django.views.generic import TemplateView
+from django.conf import settings
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
-from rest_framework_simplejwt.views import (
-    TokenObtainPairView,
-    TokenRefreshView,
-)
+try:
+    from rest_framework_simplejwt.views import (
+        TokenObtainPairView,
+        TokenRefreshView,
+    )
+except Exception:  # simplejwt non installé
+    TokenObtainPairView = TokenRefreshView = None
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
-    # Pages HTML (templates)
-    path('', TemplateView.as_view(template_name='index.html'), name='page-index'),
-    path('produits/', TemplateView.as_view(template_name='produits.html'), name='page-produits'),
-    path('magasins/', TemplateView.as_view(template_name='magasins.html'), name='page-magasins'),
-    path('proximite/', TemplateView.as_view(template_name='proximite.html'), name='page-proximite'),
-    path('recommandations/', TemplateView.as_view(template_name='recommandations.html'), name='page-recommandations'),
-    path('analyses/', TemplateView.as_view(template_name='analyses.html'), name='page-analyses'),
-    path('connexion/', TemplateView.as_view(template_name='connexion.html'), name='page-connexion'),
-    path('inscription/', TemplateView.as_view(template_name='inscription.html'), name='page-inscription'),
-    # Composants (utilisés par main.js via fetch)
-    path('components/header.html', TemplateView.as_view(template_name='components/header.html'), name='component-header'),
-    path('components/footer.html', TemplateView.as_view(template_name='components/footer.html'), name='component-footer'),
+    path(settings.ADMIN_URL, admin.site.urls),
     path('api/produits/', include('apps.produits.urls')),
     path('api/magasins/', include('apps.magasins.urls')),
-    path('api/utilisateurs/', include('apps.utilisateurs.urls')),
+    # Important: include utilisateurs URLs at root so their internal 'api/' prefixes map correctly
+    path('', include('apps.utilisateurs.urls')),
     path('api/recommandations/', include('apps.recommandations.urls')),
     path('api/analyses/', include('apps.analyses.urls')),
     path('api/', include('apps.api.urls')),
     # OpenAPI schema & docs
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
     path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
-    # JWT endpoints (SimpleJWT)
-    path('api/auth/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     # Social OAuth (social-auth-app-django)
     path('oauth/', include('social_django.urls', namespace='social')),
 ]
+
+# Racine: Swagger UI seulement en DEBUG
+if settings.DEBUG:
+    urlpatterns.insert(1, path('', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui-root'))
+
+# JWT endpoints (SimpleJWT) seulement si activé
+if getattr(settings, 'USE_JWT_AUTH', False) and TokenObtainPairView and TokenRefreshView:
+    urlpatterns += [
+        path('api/auth/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+        path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    ]

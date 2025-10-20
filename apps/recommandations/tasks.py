@@ -1,6 +1,8 @@
 from celery import shared_task
 import logging
 from django.core.cache import cache
+from django.conf import settings
+from pathlib import Path
 from .modeles_ml import GestionnaireRecommandations
 from .models import ModeleML
 
@@ -17,8 +19,32 @@ def entrainer_modele_recommandation(self, modele_type='contenu'):
         if modele_type == 'contenu':
             # Entraînement du modèle de contenu
             from apps.produits.models import Produit
-            produits = list(Produit.objects.values('id', 'nom', 'categorie', 'marque', 'description'))
+            produits_qs = Produit.objects.select_related('categorie', 'marque').values(
+                'id', 'nom', 'categorie__nom', 'marque__nom', 'description'
+            )
+            produits = [
+                {
+                    'id': r['id'],
+                    'nom': r.get('nom') or '',
+                    'categorie': r.get('categorie__nom') or '',
+                    'marque': r.get('marque__nom') or '',
+                    'description': r.get('description') or '',
+                }
+                for r in produits_qs
+            ]
             gestionnaire.modele_contenu.entrainer(produits)
+            # Sauvegarde artefact
+            out_dir = Path(getattr(settings, 'ML_ARTIFACTS_DIR', Path('ml_models') / 'artifacts'))
+            out_dir.mkdir(parents=True, exist_ok=True)
+            contenu_path = out_dir / 'modele_recommandation_contenu_latest.joblib'
+            try:
+                gestionnaire.modele_contenu.sauvegarder(str(contenu_path))
+            except Exception as _e:
+                logger.warning(f"Sauvegarde artefact contenu échouée: {_e}")
+            # Registry cache
+            reg = cache.get('ml_registry') or {}
+            reg['contenu'] = str(contenu_path)
+            cache.set('ml_registry', reg, None)
             
             # Sauvegarder les métadonnées
             ModeleML.objects.update_or_create(
@@ -34,14 +60,60 @@ def entrainer_modele_recommandation(self, modele_type='contenu'):
             
         elif modele_type == 'prix':
             # Entraînement du modèle de prix
-            from apps.prix.models import HistoriquePrix
-            prix_data = list(HistoriquePrix.objects.values(
-                'produit__categorie', 'produit__marque', 'magasin__nom', 
-                'magasin__ville', 'prix', 'date'
-            )[:50000])
+            from apps.produits.models import Prix
+            prix_qs = Prix.objects.select_related(
+                'produit__categorie', 'produit__marque', 'produit__unite_mesure', 'magasin__ville'
+            ).values(
+                'produit__categorie__nom',
+                'produit__marque__nom',
+                'produit__unite_mesure__symbole',
+                'produit__quantite_unite',
+                'magasin__nom',
+                'magasin__ville__nom',
+                'magasin__type',
+                'magasin__zone',
+                'type_prix',
+                'prix_actuel',
+                'date_modification'
+            )[:50000]
+            prix_data = [
+                {
+                    'categorie': r.get('produit__categorie__nom'),
+                    'sous_categorie': '',
+                    'marque': r.get('produit__marque__nom'),
+                    'magasin': r.get('magasin__nom'),
+                    'ville': r.get('magasin__ville__nom'),
+                    'type_magasin': r.get('magasin__type'),
+                    'zone': r.get('magasin__zone'),
+                    'type_prix': r.get('type_prix'),
+                    'unite_mesure': r.get('produit__unite_mesure__symbole'),
+                    'quantite_unite': r.get('produit__quantite_unite'),
+                    'prix': r.get('prix_actuel'),
+                    'date': r.get('date_modification'),
+                }
+                for r in prix_qs
+            ]
             
             if prix_data:
                 gestionnaire.modele_prix.entrainer(prix_data)
+                # Sauvegarde artefact
+                out_dir = Path(getattr(settings, 'ML_ARTIFACTS_DIR', Path('ml_models') / 'artifacts'))
+                out_dir.mkdir(parents=True, exist_ok=True)
+                prix_path = out_dir / 'modele_prediction_prix_latest.joblib'
+                try:
+                    from ml_models.modele_prediction_prix import ModelePredictionPrix as _Tmp  # noqa
+                except Exception:
+                    pass
+                try:
+                    # Le modèle interne n'a pas de méthode save exposée ici, on persiste via joblib si besoin
+                    # mais on s'en tient à l'API existante (sauvegarde non critique)
+                    import joblib
+                    joblib.dump(gestionnaire.modele_prix, str(prix_path))
+                except Exception as _e:
+                    logger.warning(f"Sauvegarde artefact prix échouée: {_e}")
+                reg = cache.get('ml_registry') or {}
+                reg['prix'] = str(prix_path)
+                cache.set('ml_registry', reg, None)
                 
                 ModeleML.objects.update_or_create(
                     nom='prediction_prix',

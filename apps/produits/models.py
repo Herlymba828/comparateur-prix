@@ -2,6 +2,7 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 from django.contrib.auth import get_user_model
 from django.core.validators import MinValueValidator, MaxValueValidator
+from decimal import Decimal
 
 User = get_user_model()
 
@@ -104,6 +105,9 @@ class Produit(models.Model):
     glucides_g = models.DecimalField(_("Glucides (g)"), max_digits=5, decimal_places=2, null=True, blank=True)
     lipides_g = models.DecimalField(_("Lipides (g)"), max_digits=5, decimal_places=2, null=True, blank=True)
     
+    # Description
+    description = models.TextField(_("Description"), blank=True)
+
     # Images
     image_principale = models.ImageField(_("Image principale"), upload_to='produits/', null=True, blank=True)
     images_secondaires = models.JSONField(_("Images secondaires"), default=list, blank=True)
@@ -167,6 +171,9 @@ class Prix(models.Model):
     
     prix_actuel = models.DecimalField(_("Prix actuel"), max_digits=8, decimal_places=2, validators=[MinValueValidator(0.01)])
     prix_origine = models.DecimalField(_("Prix d'origine"), max_digits=8, decimal_places=2, null=True, blank=True)
+    devise = models.CharField(_("Devise"), max_length=10, default='FCFA')
+    type_prix = models.CharField(_("Type de prix"), max_length=20, default='detail')
+    zone = models.CharField(_("Zone"), max_length=50, blank=True, default='')
     
     # Métriques dérivées (remplace Offre.cheapness_score etc.)
     cheapness_score = models.FloatField(null=True, blank=True)
@@ -219,9 +226,43 @@ class Prix(models.Model):
         return None
 
     def save(self, *args, **kwargs):
-        # Déterminer automatiquement la promotion si prix_origine > prix_actuel
+        old_price = None
+        if self.pk:
+            try:
+                old_price = Prix.objects.filter(pk=self.pk).values_list('prix_actuel', flat=True).first()
+            except Exception:
+                old_price = None
         if self.prix_origine and self.prix_origine > self.prix_actuel:
             self.est_promotion = True
+        super().save(*args, **kwargs)
+        try:
+            if old_price is None:
+                return
+            if self.prix_actuel != old_price:
+                variation = self.prix_actuel - old_price
+                pourcentage = Decimal('0')
+                try:
+                    if old_price and Decimal(old_price) != Decimal('0'):
+                        pourcentage = (Decimal(self.prix_actuel) - Decimal(old_price)) * Decimal('100') / Decimal(old_price)
+                except Exception:
+                    pourcentage = Decimal('0')
+                raison = 'a_jour'
+                if self.prix_origine and self.prix_origine > self.prix_actuel:
+                    raison = 'promotion'
+                elif variation > 0:
+                    raison = 'augmentation'
+                elif variation < 0:
+                    raison = 'reduction'
+                HistoriquePrix.objects.create(
+                    prix=self,
+                    ancien_prix=old_price,
+                    nouveau_prix=self.prix_actuel,
+                    variation=variation,
+                    pourcentage_variation=pourcentage,
+                    raison=raison,
+                )
+        except Exception:
+            pass
 class HistoriquePrix(models.Model):
     """Historique des changements d'un enregistrement Prix (fusion depuis app prix)."""
     prix = models.ForeignKey(Prix, on_delete=models.CASCADE, related_name='historique', verbose_name=("Prix"))
@@ -451,6 +492,8 @@ class HomologationProduit(models.Model):
     marque = models.CharField(max_length=120, blank=True)
     categorie = models.CharField(max_length=120, default='Non classé')
     sous_categorie = models.CharField(max_length=120, blank=True)
+    # Nouveau: liaison FK optionnelle vers une sous-catégorie hiérarchique
+    sous_categorie_fk = models.ForeignKey(Categorie, on_delete=models.SET_NULL, null=True, blank=True, related_name='homologations')
     reference_titre = models.CharField(max_length=255, blank=True)
     reference_numero = models.CharField(max_length=120, blank=True)
     reference_url = models.CharField(max_length=200, blank=True)
@@ -460,6 +503,7 @@ class HomologationProduit(models.Model):
     class Meta:
         verbose_name = "Produit homologué (référence)"
         verbose_name_plural = "Produits homologués (référence)"
+        unique_together = [('nom', 'marque', 'format')]
         indexes = [
             models.Index(fields=['nom', 'marque']),
             models.Index(fields=['categorie', 'sous_categorie']),

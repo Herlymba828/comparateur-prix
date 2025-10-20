@@ -19,6 +19,10 @@ celery -A config.celery:app beat -l info
 ```
 - Broker/Backend: `REDIS_URL` ou `CELERY_BROKER_URL` (voir `.env.example`)
 
+### Dépannage Celery/Redis
+- Si les commandes `.delay()` semblent bloquer (erreurs de connexion Redis), vérifiez que Redis est démarré et accessible, et que le worker Celery tourne.
+- Exemple Windows (PowerShell): lancez Redis, puis dans un autre terminal lancez le worker.
+
 ## Import DGCCRF
 - Dry-run:
 ```bash
@@ -61,13 +65,41 @@ Renseigner les variables d’environnement dans `.env` (voir `.env.example`) :
 
 Endpoints d’intégration via `social_django` (callback): configurez les URLs de redirection chez les fournisseurs avec votre domaine/ports.
 
-## Géocodage des magasins (HERE Maps)
+## Géocodage des magasins (Google Geocoding API)
 - Configurer dans `.env`:
-  - `HERE_API_KEY` (obligatoire)
-  - `HERE_GEOCODE_ENDPOINT` (optionnel, défaut: https://geocode.search.hereapi.com/v1/geocode)
-  - `HERE_TIMEOUT`, `HERE_CACHE_TTL`, `DEFAULT_COUNTRY_NAME`
+  - `GOOGLE_API_KEY` (obligatoire)
+  - `GOOGLE_GEOCODE_ENDPOINT` (optionnel, défaut: https://maps.googleapis.com/maps/api/geocode/json)
+  - `GOOGLE_TIMEOUT`, `GOOGLE_CACHE_TTL`, `DEFAULT_COUNTRY_NAME`
 - Lancer le géocodage en lot:
 ```bash
 python comparateur_prix/manage.py geocode_magasins --only-missing --limit 500
+# Pour regéocoder même ceux déjà géocodés (enrichir formatted_address/place_id):
+python comparateur_prix/manage.py geocode_magasins --force --limit 500
 ```
-Le provider de géocodage stocké dans `Magasin.geocoding_provider` est désormais `"here"`.
+Le provider de géocodage stocké dans `Magasin.geocoding_provider` est désormais `"Google"`.
+
+## Modèles ML (recommandations/prix)
+- Initialiser/entraîner en local (synchrone):
+```bash
+python comparateur_prix/manage.py shell -c "from apps.recommandations.modeles_ml import GestionnaireRecommandations as G; g=G(); g.initialiser_modeles(); print('init:', g.est_initialise)"
+```
+- Entraîner via Celery (asynchrone):
+```bash
+python comparateur_prix/manage.py shell -c "from apps.recommandations.tasks import entrainer_modele_recommandation as t; t.delay('contenu')"
+python comparateur_prix/manage.py shell -c "from apps.recommandations.tasks import entrainer_modele_recommandation as t; t.delay('prix')"
+```
+- Artefacts: sauvegardés par défaut dans `ml_models/artifacts/` (`*_latest.joblib`). Vous pouvez définir `ML_ARTIFACTS_DIR` dans les settings.
+- Cache: un registry des chemins d’artefacts est conservé dans le cache (`ml_registry`).
+
+### Troubleshooting ML
+- scikit-learn TF‑IDF: certaines versions n’acceptent que `stop_words='english'`. Le code utilise `stop_words=None` pour compatibilité.
+- Numpy/Decimal: la cible prix est convertie en float avant `np.log1p` pour éviter l’erreur `Decimal`.
+- Embeddings optionnels: si `sentence-transformers` n’est pas installé ou le modèle indisponible, fallback automatique en TF‑IDF+SVD.
+
+## Audit des homologations (qualité des données)
+- Générer un rapport des `HomologationProduit` avec `sous_categorie` vide:
+```bash
+python comparateur_prix/manage.py audit_homologations --stats
+python comparateur_prix/manage.py audit_homologations --limit 50 --offset 0
+python comparateur_prix/manage.py audit_homologations --csv comparateur_prix/data/homologations_sans_sous_categorie.csv
+```

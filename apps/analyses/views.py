@@ -270,3 +270,212 @@ def latest_graph(request):
         }
     }
     return Response(payload)
+
+
+# === Endpoints statistiques orientés graphiques ===
+@api_view(["GET"])
+def stats_prix_overview(request):
+    jours = int(request.GET.get('jours', 30))
+    categorie_id = request.GET.get('categorie_id')
+    ville_id = request.GET.get('ville_id')
+    region_id = request.GET.get('region_id')
+
+    cache_key = f"stats_prix_overview_{jours}_{categorie_id}_{ville_id}_{region_id}"
+    cached = cache.get(cache_key)
+    if cached:
+        return Response(cached)
+
+    date_fin = timezone.now().date()
+    date_debut = date_fin - datetime.timedelta(days=jours)
+
+    qs = Prix.objects.filter(date_releve__date__gte=date_debut, date_releve__date__lte=date_fin)
+    if categorie_id:
+        qs = qs.filter(produit__categorie_id=categorie_id)
+    if ville_id:
+        qs = qs.filter(magasin__ville_id=ville_id)
+    if region_id:
+        qs = qs.filter(magasin__ville__region_id=region_id)
+
+    rows = (
+        qs.extra({'date': 'DATE(date_releve)'}).values('date')
+        .annotate(prix_min=Min('prix'), prix_moyen=Avg('prix'), prix_max=Max('prix'))
+        .order_by('date')
+    )
+    labels = [str(r['date']) for r in rows]
+    payload = {
+        'periode': f"{jours}j",
+        'date_debut': date_debut,
+        'date_fin': date_fin,
+        'labels': labels,
+        'series': {
+            'prix_min': [r['prix_min'] for r in rows],
+            'prix_moyen': [r['prix_moyen'] for r in rows],
+            'prix_max': [r['prix_max'] for r in rows],
+        }
+    }
+    cache.set(cache_key, payload, 600)
+    return Response(payload)
+
+
+@api_view(["GET"])
+def stats_magasins_plus_actifs(request):
+    jours = int(request.GET.get('jours', 30))
+    limit = int(request.GET.get('limit', 10))
+    metrique = (request.GET.get('metrique') or 'updates').lower()  # updates | releves
+
+    cache_key = f"stats_magasins_plus_actifs_{jours}_{limit}_{metrique}"
+    cached = cache.get(cache_key)
+    if cached:
+        return Response(cached)
+
+    date_fin = timezone.now().date()
+    date_debut = date_fin - datetime.timedelta(days=jours)
+
+    if metrique == 'releves':
+        qs = Prix.objects.filter(date_releve__date__gte=date_debut, date_releve__date__lte=date_fin)
+    else:
+        qs = Prix.objects.filter(date_modification__date__gte=date_debut, date_modification__date__lte=date_fin)
+
+    rows = (
+        qs.values('magasin_id', 'magasin__nom', 'magasin__ville__nom')
+        .annotate(compte=Count('id'))
+        .order_by('-compte')[:limit]
+    )
+    payload = {
+        'periode': f"{jours}j",
+        'metrique': metrique,
+        'items': [
+            {
+                'magasin_id': r['magasin_id'],
+                'nom': r['magasin__nom'],
+                'ville': r['magasin__ville__nom'],
+                'compte': r['compte'],
+            } for r in rows
+        ]
+    }
+    cache.set(cache_key, payload, 600)
+    return Response(payload)
+
+
+@api_view(["GET"])
+def stats_produits_plus_recherches(request):
+    jours = int(request.GET.get('jours', 30))
+    limit = int(request.GET.get('limit', 10))
+    cache_key = f"stats_produits_plus_recherches_{jours}_{limit}"
+    cached = cache.get(cache_key)
+    if cached:
+        return Response(cached)
+
+    date_fin = timezone.now()
+    date_debut = date_fin - datetime.timedelta(days=jours)
+
+    # Agréger par produit si dispo, sinon par terme q
+    by_product = (
+        SearchEvent.objects.filter(created_at__gte=date_debut)
+        .exclude(produit__isnull=True)
+        .values('produit_id', 'produit__nom')
+        .annotate(compte=Count('id'))
+        .order_by('-compte')[:limit]
+    )
+    items = [
+        {
+            'produit_id': r['produit_id'],
+            'nom': r['produit__nom'],
+            'compte_recherches': r['compte']
+        } for r in by_product
+    ]
+
+    remaining = limit - len(items)
+    if remaining > 0:
+        by_term = (
+            SearchEvent.objects.filter(created_at__gte=date_debut, produit__isnull=True)
+            .values('q')
+            .annotate(compte=Count('id'))
+            .order_by('-compte')[:remaining]
+        )
+        items.extend([
+            {
+                'term': r['q'],
+                'compte_recherches': r['compte']
+            } for r in by_term
+        ])
+
+    payload = {
+        'periode': f"{jours}j",
+        'items': items
+    }
+    cache.set(cache_key, payload, 600)
+    return Response(payload)
+
+
+@api_view(["GET"])
+def stats_tendances(request):
+    t = (request.GET.get('type') or 'prix').lower()  # prix | popularite
+    scope = (request.GET.get('scope') or 'produit').lower()  # produit | categorie
+    ident = request.GET.get('id')
+    periode = request.GET.get('periode', '30j')
+
+    cache_key = f"stats_tendances_{t}_{scope}_{ident}_{periode}"
+    cached = cache.get(cache_key)
+    if cached:
+        return Response(cached)
+
+    date_fin = timezone.now().date()
+    if periode == '7j':
+        date_debut = date_fin - datetime.timedelta(days=7)
+    elif periode == '90j':
+        date_debut = date_fin - datetime.timedelta(days=90)
+    elif periode == '1an':
+        date_debut = date_fin - datetime.timedelta(days=365)
+    else:
+        date_debut = date_fin - datetime.timedelta(days=30)
+
+    if t == 'popularite':
+        # tendance popularité via SearchEvent par jour
+        qs = SearchEvent.objects.filter(created_at__date__gte=date_debut, created_at__date__lte=date_fin)
+        if scope == 'produit' and ident:
+            qs = qs.filter(produit_id=ident)
+        rows = (
+            qs.extra({'date': 'DATE(created_at)'}).values('date')
+            .annotate(valeur=Count('id'))
+            .order_by('date')
+        )
+        labels = [str(r['date']) for r in rows]
+        series = [r['valeur'] for r in rows]
+    else:
+        # tendance prix via Prix par jour
+        qs = Prix.objects.filter(date_releve__date__gte=date_debut, date_releve__date__lte=date_fin)
+        if scope == 'produit' and ident:
+            qs = qs.filter(produit_id=ident)
+        elif scope == 'categorie' and ident:
+            qs = qs.filter(produit__categorie_id=ident)
+        rows = (
+            qs.extra({'date': 'DATE(date_releve)'}).values('date')
+            .annotate(valeur=Avg('prix'))
+            .order_by('date')
+        )
+        labels = [str(r['date']) for r in rows]
+        series = [r['valeur'] for r in rows]
+
+    variation = 0.0
+    if len(series) >= 2 and series[0] not in (None, 0):
+        try:
+            variation = ((series[-1] - series[0]) / series[0]) * 100.0
+        except Exception:
+            variation = 0.0
+    tendance = 'hausse' if variation > 0 else 'baisse' if variation < 0 else 'stable'
+
+    payload = {
+        'periode': periode,
+        'date_debut': date_debut,
+        'date_fin': date_fin,
+        'labels': labels,
+        'series': {'valeur': series},
+        'variation_totale': round(variation, 2),
+        'tendance': tendance,
+        'type': t,
+        'scope': scope,
+        'id': ident,
+    }
+    cache.set(cache_key, payload, 600)
+    return Response(payload)

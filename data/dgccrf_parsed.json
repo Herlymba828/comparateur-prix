@@ -1,0 +1,1252 @@
+[
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "2300 FCFA",
+    "sous_categorie": "",
+    "produit": "Edig-Edicef-IPN",
+    "marque_editeur": "Edig-Edicef-IPN",
+    "prix": [
+      {
+        "zone": "Libreville",
+        "valeur": 2300.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "https://www.dgccrf.ga/echo-prix-homologue",
+      "date_extraction": "2025-10-13T06:32:59.409184+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "2300 FCFA",
+    "sous_categorie": "",
+    "produit": "Produit (EDIG)",
+    "marque_editeur": "EDIG/EDICEF/IPN",
+    "prix": [
+      {
+        "zone": "Libreville",
+        "valeur": 2300.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "https://www.dgccrf.ga/echo-prix-homologue",
+      "date_extraction": "2025-10-13T06:32:59.409184+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "2530 FCFA",
+    "sous_categorie": "",
+    "produit": "Produit (EDIG)",
+    "marque_editeur": "EDIG/EDICEF/IPN",
+    "prix": [
+      {
+        "zone": "Libreville",
+        "valeur": 2530.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "https://www.dgccrf.ga/echo-prix-homologue",
+      "date_extraction": "2025-10-13T06:32:59.409184+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "2300 FCFA",
+    "sous_categorie": "",
+    "produit": "EVEIL",
+    "marque_editeur": "Edig-Edicef-IPN",
+    "prix": [
+      {
+        "zone": "Libreville",
+        "valeur": 2300.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "https://www.dgccrf.ga/echo-prix-homologue",
+      "date_extraction": "2025-10-13T06:32:59.409184+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "2300 FCFA",
+    "sous_categorie": "",
+    "produit": "Produit (EDIG)",
+    "marque_editeur": "EDIG/EDICEF/IPN",
+    "prix": [
+      {
+        "zone": "Libreville",
+        "valeur": 2300.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "https://www.dgccrf.ga/echo-prix-homologue",
+      "date_extraction": "2025-10-13T06:32:59.409184+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "2530 FCFA",
+    "sous_categorie": "",
+    "produit": "Produit (EDIG)",
+    "marque_editeur": "EDIG/EDICEF/IPN",
+    "prix": [
+      {
+        "zone": "Libreville",
+        "valeur": 2530.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "https://www.dgccrf.ga/echo-prix-homologue",
+      "date_extraction": "2025-10-13T06:32:59.409184+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "2500 FCFA",
+    "sous_categorie": "",
+    "produit": "Edig-Edicef-IPN",
+    "marque_editeur": "Edig-Edicef-IPN",
+    "prix": [
+      {
+        "zone": "Libreville",
+        "valeur": 2500.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "https://www.dgccrf.ga/echo-prix-homologue",
+      "date_extraction": "2025-10-13T06:32:59.409184+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "2000 FCFA",
+    "sous_categorie": "",
+    "produit": "Produit (EDIG)",
+    "marque_editeur": "EDIG/EDICEF/IPN",
+    "prix": [
+      {
+        "zone": "Libreville",
+        "valeur": 2000.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "https://www.dgccrf.ga/echo-prix-homologue",
+      "date_extraction": "2025-10-13T06:32:59.409184+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "2750 FCFA",
+    "sous_categorie": "",
+    "produit": "Produit (EDIG)",
+    "marque_editeur": "EDIG/EDICEF/IPN",
+    "prix": [
+      {
+        "zone": "Libreville",
+        "valeur": 2750.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "https://www.dgccrf.ga/echo-prix-homologue",
+      "date_extraction": "2025-10-13T06:32:59.409184+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "3300 FCFA",
+    "sous_categorie": "",
+    "produit": "Edig-Edicef-IPN",
+    "marque_editeur": "Edig-Edicef-IPN",
+    "prix": [
+      {
+        "zone": "Libreville",
+        "valeur": 3300.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "https://www.dgccrf.ga/echo-prix-homologue",
+      "date_extraction": "2025-10-13T06:32:59.409184+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "2500 FCFA",
+    "sous_categorie": "",
+    "produit": "Produit (EDIG)",
+    "marque_editeur": "EDIG/EDICEF/IPN",
+    "prix": [
+      {
+        "zone": "Libreville",
+        "valeur": 2500.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "https://www.dgccrf.ga/echo-prix-homologue",
+      "date_extraction": "2025-10-13T06:32:59.409184+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "3630 FCFA",
+    "sous_categorie": "",
+    "produit": "Produit (EDIG)",
+    "marque_editeur": "EDIG/EDICEF/IPN",
+    "prix": [
+      {
+        "zone": "Libreville",
+        "valeur": 3630.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "https://www.dgccrf.ga/echo-prix-homologue",
+      "date_extraction": "2025-10-13T06:32:59.409184+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "2750 FCFA",
+    "sous_categorie": "",
+    "produit": "Produit (EDIG)",
+    "marque_editeur": "EDIG/EDICEF/IPN",
+    "prix": [
+      {
+        "zone": "Libreville",
+        "valeur": 2750.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "https://www.dgccrf.ga/echo-prix-homologue",
+      "date_extraction": "2025-10-13T06:32:59.409184+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "4000 FCFA",
+    "sous_categorie": "",
+    "produit": "Edig-Edicef-IPN",
+    "marque_editeur": "Edig-Edicef-IPN",
+    "prix": [
+      {
+        "zone": "Libreville",
+        "valeur": 4000.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "https://www.dgccrf.ga/echo-prix-homologue",
+      "date_extraction": "2025-10-13T06:32:59.409184+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "2900 FCFA",
+    "sous_categorie": "",
+    "produit": "Produit (EDIG)",
+    "marque_editeur": "EDIG/EDICEF/IPN",
+    "prix": [
+      {
+        "zone": "Libreville",
+        "valeur": 2900.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "https://www.dgccrf.ga/echo-prix-homologue",
+      "date_extraction": "2025-10-13T06:32:59.409184+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "4400 FCFA",
+    "sous_categorie": "",
+    "produit": "Produit (EDIG)",
+    "marque_editeur": "EDIG/EDICEF/IPN",
+    "prix": [
+      {
+        "zone": "Libreville",
+        "valeur": 4400.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "https://www.dgccrf.ga/echo-prix-homologue",
+      "date_extraction": "2025-10-13T06:32:59.409184+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "3190 FCFA",
+    "sous_categorie": "",
+    "produit": "Produit (EDIG)",
+    "marque_editeur": "EDIG/EDICEF/IPN",
+    "prix": [
+      {
+        "zone": "Libreville",
+        "valeur": 3190.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "https://www.dgccrf.ga/echo-prix-homologue",
+      "date_extraction": "2025-10-13T06:32:59.409184+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "4200 FCFA",
+    "sous_categorie": "",
+    "produit": "Edig-Edicef-IPN",
+    "marque_editeur": "Edig-Edicef-IPN",
+    "prix": [
+      {
+        "zone": "Libreville",
+        "valeur": 4200.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "https://www.dgccrf.ga/echo-prix-homologue",
+      "date_extraction": "2025-10-13T06:32:59.409184+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "3300 FCFA",
+    "sous_categorie": "",
+    "produit": "Produit (EDIG)",
+    "marque_editeur": "EDIG/EDICEF/IPN",
+    "prix": [
+      {
+        "zone": "Libreville",
+        "valeur": 3300.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "https://www.dgccrf.ga/echo-prix-homologue",
+      "date_extraction": "2025-10-13T06:32:59.409184+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "3300 FCFA",
+    "sous_categorie": "",
+    "produit": "Produit (EDIG)",
+    "marque_editeur": "EDIG/EDICEF/IPN",
+    "prix": [
+      {
+        "zone": "Libreville",
+        "valeur": 3300.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "https://www.dgccrf.ga/echo-prix-homologue",
+      "date_extraction": "2025-10-13T06:32:59.409184+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "4620 FCFA",
+    "sous_categorie": "",
+    "produit": "Produit (EDIG)",
+    "marque_editeur": "EDIG/EDICEF/IPN",
+    "prix": [
+      {
+        "zone": "Libreville",
+        "valeur": 4620.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "https://www.dgccrf.ga/echo-prix-homologue",
+      "date_extraction": "2025-10-13T06:32:59.409184+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "3630 FCFA",
+    "sous_categorie": "",
+    "produit": "Produit (EDIG)",
+    "marque_editeur": "EDIG/EDICEF/IPN",
+    "prix": [
+      {
+        "zone": "Libreville",
+        "valeur": 3630.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "https://www.dgccrf.ga/echo-prix-homologue",
+      "date_extraction": "2025-10-13T06:32:59.409184+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "3630 FCFA",
+    "sous_categorie": "",
+    "produit": "Produit (EDIG)",
+    "marque_editeur": "EDIG/EDICEF/IPN",
+    "prix": [
+      {
+        "zone": "Libreville",
+        "valeur": 3630.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "https://www.dgccrf.ga/echo-prix-homologue",
+      "date_extraction": "2025-10-13T06:32:59.409184+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "4200 FCFA",
+    "sous_categorie": "",
+    "produit": "Edig-Edicef-IPN",
+    "marque_editeur": "Edig-Edicef-IPN",
+    "prix": [
+      {
+        "zone": "Libreville",
+        "valeur": 4200.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "https://www.dgccrf.ga/echo-prix-homologue",
+      "date_extraction": "2025-10-13T06:32:59.409184+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "3300 FCFA",
+    "sous_categorie": "",
+    "produit": "Produit (EDIG)",
+    "marque_editeur": "EDIG/EDICEF/IPN",
+    "prix": [
+      {
+        "zone": "Libreville",
+        "valeur": 3300.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "https://www.dgccrf.ga/echo-prix-homologue",
+      "date_extraction": "2025-10-13T06:32:59.409184+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "4200 FCFA",
+    "sous_categorie": "",
+    "produit": "Produit (EDIG)",
+    "marque_editeur": "EDIG/EDICEF/IPN",
+    "prix": [
+      {
+        "zone": "Libreville",
+        "valeur": 4200.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "https://www.dgccrf.ga/echo-prix-homologue",
+      "date_extraction": "2025-10-13T06:32:59.410183+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "4620 FCFA",
+    "sous_categorie": "",
+    "produit": "Produit (EDIG)",
+    "marque_editeur": "EDIG/EDICEF/IPN",
+    "prix": [
+      {
+        "zone": "Libreville",
+        "valeur": 4620.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "https://www.dgccrf.ga/echo-prix-homologue",
+      "date_extraction": "2025-10-13T06:32:59.410183+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "3630 FCFA",
+    "sous_categorie": "",
+    "produit": "Produit (EDIG)",
+    "marque_editeur": "EDIG/EDICEF/IPN",
+    "prix": [
+      {
+        "zone": "Libreville",
+        "valeur": 3630.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "https://www.dgccrf.ga/echo-prix-homologue",
+      "date_extraction": "2025-10-13T06:32:59.410183+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "4620 FCFA",
+    "sous_categorie": "",
+    "produit": "Produit (EDIG)",
+    "marque_editeur": "EDIG/EDICEF/IPN",
+    "prix": [
+      {
+        "zone": "Libreville",
+        "valeur": 4620.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "https://www.dgccrf.ga/echo-prix-homologue",
+      "date_extraction": "2025-10-13T06:32:59.410183+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "Produits défiscalisés",
+    "sous_categorie": "",
+    "produit": "Cotis de Porc viandé",
+    "marque_editeur": "",
+    "prix": [
+      {
+        "zone": "",
+        "valeur": 1875.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "prix_detail",
+      "date_extraction": "2025-10-13T06:32:59.410183+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "Produits défiscalisés",
+    "sous_categorie": "",
+    "produit": "Cotis de Porc semi viandé",
+    "marque_editeur": "",
+    "prix": [
+      {
+        "zone": "",
+        "valeur": 1550.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "prix_detail",
+      "date_extraction": "2025-10-13T06:32:59.410183+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "Produits défiscalisés",
+    "sous_categorie": "",
+    "produit": "Rognons emballage bloc",
+    "marque_editeur": "",
+    "prix": [
+      {
+        "zone": "",
+        "valeur": 1000.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "prix_detail",
+      "date_extraction": "2025-10-13T06:32:59.410183+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "Produits défiscalisés",
+    "sous_categorie": "",
+    "produit": "Cuisses de Poulet",
+    "marque_editeur": "",
+    "prix": [
+      {
+        "zone": "",
+        "valeur": 1050.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "prix_detail",
+      "date_extraction": "2025-10-13T06:32:59.410183+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "Produits défiscalisés",
+    "sous_categorie": "",
+    "produit": "Cuisses de Poulet",
+    "marque_editeur": "",
+    "prix": [
+      {
+        "zone": "",
+        "valeur": 1100.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "prix_detail",
+      "date_extraction": "2025-10-13T06:32:59.410183+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "Produits défiscalisés",
+    "sous_categorie": "",
+    "produit": "Pilons de Poulet",
+    "marque_editeur": "",
+    "prix": [
+      {
+        "zone": "",
+        "valeur": 1150.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "prix_detail",
+      "date_extraction": "2025-10-13T06:32:59.410183+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "Produits défiscalisés",
+    "sous_categorie": "",
+    "produit": "Ailes de Poulet 3 phalanges B",
+    "marque_editeur": "",
+    "prix": [
+      {
+        "zone": "",
+        "valeur": 1200.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "prix_detail",
+      "date_extraction": "2025-10-13T06:32:59.410183+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "Produits défiscalisés",
+    "sous_categorie": "",
+    "produit": "Ailes de Poule",
+    "marque_editeur": "",
+    "prix": [
+      {
+        "zone": "",
+        "valeur": 1445.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "prix_detail",
+      "date_extraction": "2025-10-13T06:32:59.410183+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "Produits défiscalisés",
+    "sous_categorie": "",
+    "produit": "Ailes de Dinde 3 phalanges",
+    "marque_editeur": "",
+    "prix": [
+      {
+        "zone": "",
+        "valeur": 1650.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "prix_detail",
+      "date_extraction": "2025-10-13T06:32:59.410183+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "Produits défiscalisés",
+    "sous_categorie": "",
+    "produit": "Maquereaux 300g - 500g",
+    "marque_editeur": "",
+    "prix": [
+      {
+        "zone": "",
+        "valeur": 1800.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": "300.0g"
+    },
+    "metadata": {
+      "url_source": "prix_detail",
+      "date_extraction": "2025-10-13T06:32:59.410183+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "Produits défiscalisés",
+    "sous_categorie": "",
+    "produit": "Bar Amérique du Sud",
+    "marque_editeur": "",
+    "prix": [
+      {
+        "zone": "",
+        "valeur": 1800.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": ""
+    },
+    "metadata": {
+      "url_source": "prix_detail",
+      "date_extraction": "2025-10-13T06:32:59.410183+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "Produits défiscalisés",
+    "sous_categorie": "",
+    "produit": "Tilapia 300g - 500g",
+    "marque_editeur": "",
+    "prix": [
+      {
+        "zone": "",
+        "valeur": 1375.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": "300.0g"
+    },
+    "metadata": {
+      "url_source": "prix_detail",
+      "date_extraction": "2025-10-13T06:32:59.410183+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "Produits défiscalisés",
+    "sous_categorie": "",
+    "produit": "Sardines à huile Princesse 125g x 50",
+    "marque_editeur": "",
+    "prix": [
+      {
+        "zone": "",
+        "valeur": 310.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": "125.0g"
+    },
+    "metadata": {
+      "url_source": "prix_detail",
+      "date_extraction": "2025-10-13T06:32:59.410183+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "Produits défiscalisés",
+    "sous_categorie": "",
+    "produit": "Sardines à huile en boîte BELMA 125g x 50",
+    "marque_editeur": "",
+    "prix": [
+      {
+        "zone": "",
+        "valeur": 385.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": "125.0g"
+    },
+    "metadata": {
+      "url_source": "prix_detail",
+      "date_extraction": "2025-10-13T06:32:59.410183+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "Produits défiscalisés",
+    "sous_categorie": "",
+    "produit": "Sardines à la tomate en boîte BELMA 425g x 24",
+    "marque_editeur": "",
+    "prix": [
+      {
+        "zone": "",
+        "valeur": 775.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": "425.0g"
+    },
+    "metadata": {
+      "url_source": "prix_detail",
+      "date_extraction": "2025-10-13T06:32:59.410183+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "Produits défiscalisés",
+    "sous_categorie": "",
+    "produit": "Maquereaux BELMA et Africa Queen Bande Rouge 425g x 24",
+    "marque_editeur": "",
+    "prix": [
+      {
+        "zone": "",
+        "valeur": 880.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": "425.0g"
+    },
+    "metadata": {
+      "url_source": "prix_detail",
+      "date_extraction": "2025-10-13T06:32:59.410183+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "Produits défiscalisés",
+    "sous_categorie": "",
+    "produit": "Maquereaux Africa Queen Bande Bleue 425g x 24",
+    "marque_editeur": "",
+    "prix": [
+      {
+        "zone": "",
+        "valeur": 650.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": "425.0g"
+    },
+    "metadata": {
+      "url_source": "prix_detail",
+      "date_extraction": "2025-10-13T06:32:59.410183+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "Produits défiscalisés",
+    "sous_categorie": "",
+    "produit": "Maquereaux TOMACK 425g x 24",
+    "marque_editeur": "",
+    "prix": [
+      {
+        "zone": "",
+        "valeur": 600.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": "425.0g"
+    },
+    "metadata": {
+      "url_source": "prix_detail",
+      "date_extraction": "2025-10-13T06:32:59.410183+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "Produits défiscalisés",
+    "sous_categorie": "",
+    "produit": "Tomate double concentrée SALSA 70g x 100",
+    "marque_editeur": "",
+    "prix": [
+      {
+        "zone": "",
+        "valeur": 115.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": "70.0g"
+    },
+    "metadata": {
+      "url_source": "prix_detail",
+      "date_extraction": "2025-10-13T06:32:59.410183+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "Produits défiscalisés",
+    "sous_categorie": "",
+    "produit": "Tomate double concentrée ALBA 70g x 100",
+    "marque_editeur": "",
+    "prix": [
+      {
+        "zone": "",
+        "valeur": 115.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": "70.0g"
+    },
+    "metadata": {
+      "url_source": "prix_detail",
+      "date_extraction": "2025-10-13T06:32:59.410183+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  },
+  {
+    "source": "DGCCRF Gabon",
+    "categorie": "Produits défiscalisés",
+    "sous_categorie": "",
+    "produit": "Tomate double concentrée ABC 70g x 100",
+    "marque_editeur": "",
+    "prix": [
+      {
+        "zone": "",
+        "valeur": 120.0,
+        "devise": "FCFA",
+        "date_maj": "2025-10-13",
+        "type_prix": "detail"
+      }
+    ],
+    "caracteristiques": {
+      "volume": "70.0g"
+    },
+    "metadata": {
+      "url_source": "prix_detail",
+      "date_extraction": "2025-10-13T06:32:59.410183+00:00",
+      "statut": "actif",
+      "confiance": 0.9
+    }
+  }
+]
