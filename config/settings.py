@@ -280,6 +280,10 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'anon': os.getenv('DRF_THROTTLE_ANON', '100/min'),
         'user': os.getenv('DRF_THROTTLE_USER', '1000/min'),
+        # Scopes spécifiques pour les endpoints d'auth
+        'register': os.getenv('DRF_THROTTLE_REGISTER', '10/min'),
+        'activate': os.getenv('DRF_THROTTLE_ACTIVATE', '30/min'),
+        'login': os.getenv('DRF_THROTTLE_LOGIN', '10/min'),
     },
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
@@ -400,6 +404,6 @@ if not DEBUG:
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
     # Cookies et en-têtes sécurité additionnels
-    SESSION_COOKIE_SAMESITE = 'Lax'
-    CSRF_COOKIE_SAMESITE = 'Lax'
+    SESSION_COOKIE_SAMESITE = 'None'
+    CSRF_COOKIE_SAMESITE = 'None'
     SECURE_REFERRER_POLICY = os.getenv('SECURE_REFERRER_POLICY', 'strict-origin-when-cross-origin')

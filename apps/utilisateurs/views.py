@@ -1,7 +1,14 @@
 from rest_framework import status, viewsets, permissions
+from rest_framework.throttling import AnonRateThrottle
+from rest_framework.views import APIView
 
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from django.core.mail import send_mail
+from django.conf import settings
+from django.http import HttpResponse, HttpResponseBadRequest
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
 try:
     from rest_framework_simplejwt.tokens import RefreshToken
     HAS_JWT = True
@@ -13,6 +20,8 @@ from django.utils.translation import gettext_lazy as _
 from django.db import transaction
 from django.utils import timezone
 from datetime import timedelta
+from django.core.cache import cache
+import secrets
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
 from django.views.decorators.vary import vary_on_cookie
@@ -24,7 +33,8 @@ from django.utils.dateparse import parse_datetime
 
 from .models import Utilisateur, ProfilUtilisateur, Abonnement, HistoriqueConnexion, HistoriqueRemises
 from .utils import generer_token_activation, verifier_token_activation, generer_token_reset, verifier_token_reset
-from .tasks import send_activation_email, send_reset_email
+from .utils import make_activation_uid_token, check_activation_uid_token, build_activation_link_uid
+from .tasks import send_activation_email, send_reset_email, send_login_otp_email, send_activation_email_uid
 from .serializers import (
     InscriptionSerializer, ConnexionSerializer, UtilisateurSerializer,
     MiseAJourUtilisateurSerializer, ProfilUtilisateurSerializer,
@@ -36,6 +46,7 @@ from .serializers import (
 from apps.utilisateurs.permissions import IsProprietaireProfil, IsAdminOrReadOnly, IsAdminOrModerator, IsSuperUser
 from django.contrib.auth.models import Group
 from django.contrib.auth import authenticate, login
+from django.contrib.auth import login as django_login
 from django_otp.plugins.otp_totp.models import TOTPDevice
 from django_otp import devices_for_user
 
@@ -47,6 +58,18 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
     )
     serializer_class = UtilisateurSerializer
     permission_classes = [permissions.IsAuthenticated]
+    
+    def get_permissions(self):
+        """Rendre l'inscription et la connexion publiques (AllowAny)."""
+        if getattr(self, 'action', None) in ['create']:
+            return [permissions.AllowAny()]
+        return super().get_permissions()
+
+    def get_authenticators(self):
+        """Désactiver SessionAuthentication/CSRF pour inscription/connexion."""
+        if getattr(self, 'action', None) in ['create']:
+            return []
+        return super().get_authenticators()
     
     def get_queryset(self):
         """Filtrage personnalisé selon les permissions"""
@@ -63,134 +86,34 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         elif self.action in ['update', 'partial_update']:
             return MiseAJourUtilisateurSerializer
         return self.serializer_class
-    
+
     @action(detail=False, methods=['get'])
     def moi(self, request):
         """Endpoint pour récupérer l'utilisateur connecté"""
         serializer = self.get_serializer(request.user)
         return Response(serializer.data)
-    
-    @action(detail=False, methods=['post'], permission_classes=[permissions.AllowAny])
-    def inscrire(self, request):
-        """Inscription d'un nouvel utilisateur"""
-        serializer = InscriptionSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        
-        with transaction.atomic():
-            utilisateur = serializer.save()
-            # Rendre le compte inactif jusqu'à activation email
-            utilisateur.is_active = False
-            utilisateur.est_verifie = False
-            utilisateur.save(update_fields=['is_active', 'est_verifie'])
-            
-            # Créer le profil utilisateur
-            ProfilUtilisateur.objects.create(utilisateur=utilisateur)
-            
-            # Créer un abonnement gratuit par défaut
-            Abonnement.objects.create(
-                utilisateur=utilisateur,
-                date_fin=timezone.now() + timedelta(days=365*10)
-            )
-            # Générer et envoyer le lien d'activation
-            token = generer_token_activation(utilisateur.id, utilisateur.email)
-            send_activation_email.delay(utilisateur.email, token)
-        
-        # Générer le token JWT si disponible
-        data = {
-            'utilisateur': UtilisateurSerializer(utilisateur).data,
-        }
-        if HAS_JWT and RefreshToken is not None:
-            refresh = RefreshToken.for_user(utilisateur)
-            data.update({'refresh': str(refresh), 'access': str(refresh.access_token)})
-        return Response(data, status=status.HTTP_201_CREATED)
-
-    @action(detail=False, methods=['post'], permission_classes=[permissions.AllowAny])
-    def connecter(self, request):
-        """Authentifie un utilisateur via username ou email. Retourne des tokens JWT si dispo.
-
-        Body JSON: { username?: str, email?: str, password: str }
-        """
-        username = request.data.get('username')
-        email = request.data.get('email')
-        password = request.data.get('password')
-        if not password or (not username and not email):
-            return Response({'detail': 'username ou email et password requis.'}, status=400)
-        # Si email fourni, le convertir en username
-        if not username and email:
-            try:
-                u = Utilisateur.objects.get(email=email)
-                username = u.username
-            except Utilisateur.DoesNotExist:
-                return Response({'detail': 'Identifiants invalides.'}, status=401)
-        user = authenticate(request=request, username=username, password=password)
-        if not user:
-            # log tentative
-            try:
-                HistoriqueConnexion.objects.create(
-                    ip_address=request.META.get('REMOTE_ADDR'),
-                    user_agent=request.META.get('HTTP_USER_AGENT', ''),
-                    reussi=False,
-                    utilisateur=Utilisateur.objects.filter(username=username).first()
-                )
-            except Exception:
-                pass
-            return Response({'detail': 'Identifiants invalides.'}, status=401)
-        if not user.is_active:
-            return Response({'detail': 'Compte inactif. Veuillez activer votre compte.'}, status=403)
-        # Créer la session
-        try:
-            login(request, user)
-        except Exception:
-            pass
-        # Log réussite
-        try:
-            HistoriqueConnexion.objects.create(
-                utilisateur=user,
-                ip_address=request.META.get('REMOTE_ADDR'),
-                user_agent=request.META.get('HTTP_USER_AGENT', ''),
-                reussi=True,
-            )
-        except Exception:
-            pass
-        payload = {'utilisateur': UtilisateurSerializer(user).data}
-        if HAS_JWT and RefreshToken is not None:
-            refresh = RefreshToken.for_user(user)
-            payload.update({'refresh': str(refresh), 'access': str(refresh.access_token)})
-        return Response(payload)
 
     @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def changer_mot_de_passe(self, request):
-        """Change le mot de passe de l'utilisateur authentifié.
-
-        Body JSON attendu: {
-          "ancien_mot_de_passe": str,
-          "nouveau_mot_de_passe": str,
-          "confirmation_mot_de_passe": str
-        }
-        """
+        """Change le mot de passe de l'utilisateur authentifié."""
         serializer = ChangementMotDePasseSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-
         ancien = serializer.validated_data['ancien_mot_de_passe']
         nouveau = serializer.validated_data['nouveau_mot_de_passe']
-
         user = request.user
-        # Vérifier l'ancien mot de passe
         if not user.check_password(ancien):
             return Response({'ancien_mot_de_passe': 'Ancien mot de passe incorrect.'}, status=status.HTTP_400_BAD_REQUEST)
-
         user.set_password(nouveau)
         user.save(update_fields=['password'])
         return Response({'detail': 'Mot de passe mis à jour.'})
 
-    @action(detail=False, methods=['get'])
+    @action(detail=False, methods=['get'], url_path='statistiques-fidelite')
     def statistiques_fidelite(self, request):
         """Statistiques fidélité enrichies (fidélité + abonnement + progression)."""
         user = request.user
         total_achats = getattr(user, 'total_achats', Decimal('0.00')) or Decimal('0.00')
         niveau = getattr(user, 'niveau_fidelite', 1) or 1
         base_pct = Decimal(str(user.pourcentage_remise_fidelite or 0))
-        # Abonnement
         abo_pct = Decimal('0')
         abo = getattr(user, 'abonnement', None)
         if abo and getattr(abo, 'est_valide', False):
@@ -200,20 +123,15 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
             except Exception:
                 pass
         total_pct = base_pct + abo_pct
-        # Progression vers prochain niveau selon _mettre_a_jour_niveau_fidelite
         thresholds = [Decimal('0'), Decimal('50'), Decimal('200'), Decimal('500'), Decimal('1000')]
-        # niveaux 1..5 -> prochain seuil indexé
         if niveau >= 5:
             prochain_seuil = None
             progression = Decimal('100.0')
         else:
             prochain_seuil = thresholds[niveau] if 1 <= niveau < 5 else Decimal('50')
-            # base du niveau courant
             base_seuil = thresholds[niveau-1] if 2 <= niveau <= 5 else Decimal('0')
-            # progression sur l'intervalle [base_seuil, prochain_seuil]
             intervalle = (prochain_seuil - base_seuil) or Decimal('1')
             progression = max(Decimal('0.0'), min(Decimal('100.0'), ((total_achats - base_seuil) * Decimal('100.0')) / intervalle))
-        # Jours depuis le dernier achat
         last_days = None
         try:
             if user.date_dernier_achat:
@@ -238,7 +156,7 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         s.is_valid(raise_exception=True)
         return Response(s.data)
 
-    @action(detail=False, methods=['get'])
+    @action(detail=False, methods=['get'], url_path='historique-remises')
     def historique_remises(self, request):
         """Liste (éventuelle) des remises appliquées liées à l'utilisateur courant."""
         try:
@@ -248,7 +166,7 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         data = HistoriqueRemisesSerializer(qs, many=True).data
         return Response({'count': len(data), 'results': data})
 
-    @action(detail=False, methods=['post'])
+    @action(detail=False, methods=['post'], url_path='appliquer-remise')
     def appliquer_remise(self, request):
         """Applique une remise combinée (fidélité + catégorie + abonnement) et journalise."""
         s = ApplicationRemiseSerializer(data=request.data)
@@ -256,12 +174,10 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         produit = s.validated_data['produit']
         prix_original = Decimal(str(s.validated_data['prix_original']))
         user = request.user
-        # Composantes de remise
         base_pct = Decimal(str(user.pourcentage_remise_fidelite or 0))
-        # Bonus catégorie si le produit a une catégorie
         categorie = getattr(produit, 'categorie', None)
         try:
-            cat_bonus = Decimal(str(user._get_remise_categorie(categorie)))  # basé sur la logique du modèle
+            cat_bonus = Decimal(str(user._get_remise_categorie(categorie)))
         except Exception:
             cat_bonus = Decimal('0')
         abo_bonus = Decimal('0')
@@ -272,14 +188,12 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         except Exception:
             pass
         total_pct = base_pct + cat_bonus + abo_bonus
-        # garde-fous
         if total_pct < 0:
             total_pct = Decimal('0')
         if total_pct > 50:
             total_pct = Decimal('50')
         montant = (prix_original * total_pct) / Decimal('100')
         prix_remise = prix_original - montant
-        # Déterminer le type
         comp_fidelite = (base_pct > 0 or cat_bonus > 0)
         comp_abo = (abo_bonus > 0)
         if comp_fidelite and comp_abo:
@@ -290,7 +204,6 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
             type_remise = 'fidelite'
         else:
             type_remise = 'promotion'
-        # Journaliser
         try:
             HistoriqueRemises.objects.create(
                 utilisateur=user,
@@ -317,26 +230,19 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
             'type_remise': type_remise,
         })
 
-    @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated])
+    @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated], url_path='update-location')
     def update_location(self, request):
-        """Met à jour la position courante de l'utilisateur sans modifier le schéma.
-
-        Body JSON: { "latitude": float, "longitude": float, "rayon_km": int? }
-        Stocke dans profil.preferences_recherche: { last_location: {lat, lng, at}, rayon_km }
-        """
+        """Met à jour la position courante de l'utilisateur."""
         try:
             lat = float(request.data.get('latitude'))
             lng = float(request.data.get('longitude'))
         except (TypeError, ValueError):
             return Response({'detail': 'latitude et longitude requis (float).'}, status=400)
-
         rayon_km = request.data.get('rayon_km')
         try:
             rayon_km = int(rayon_km) if rayon_km is not None else None
         except (TypeError, ValueError):
             rayon_km = None
-
-        # Upsert in preferences_recherche
         profil = getattr(request.user, 'profil', None)
         if profil is None:
             profil = ProfilUtilisateur.objects.create(utilisateur=request.user)
@@ -350,17 +256,14 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
             profil.rayon_recherche_km = rayon_km
         profil.preferences_recherche = prefs
         profil.save(update_fields=['preferences_recherche', 'rayon_recherche_km'])
-
-        # Persist also on Utilisateur (dedicated fields)
         user = request.user
         user.latitude = lat
         user.longitude = lng
         user.last_location_at = timezone.now()
         user.save(update_fields=['latitude', 'longitude', 'last_location_at'])
-
         return Response({'ok': True, 'last_location': prefs['last_location'], 'rayon_km': profil.rayon_recherche_km})
 
-    @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated])
+    @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated], url_path='renvoyer-activation')
     def renvoyer_activation(self, request):
         """Renvoyer un email d'activation si le compte n'est pas encore vérifié."""
         utilisateur = request.user
@@ -379,7 +282,7 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
             roles[name] = list(grp.user_set.values_list('id', 'username'))
         return Response({'roles': roles})
 
-    @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated, IsAdminOrModerator])
+    @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated, IsAdminOrModerator], url_path='assign-role')
     def assign_role(self, request):
         """Assigne un rôle (group) à un utilisateur. Body: {user_id, role}."""
         user_id = request.data.get('user_id')
@@ -394,7 +297,7 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         user.groups.add(grp)
         return Response({'detail': f'Rôle {role} assigné à {user.username}.'})
 
-    @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated, IsAdminOrModerator])
+    @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated, IsAdminOrModerator], url_path='revoke-role')
     def revoke_role(self, request):
         """Révoque un rôle (group) d'un utilisateur. Body: {user_id, role}."""
         user_id = request.data.get('user_id')
@@ -414,9 +317,7 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated])
     def connexions(self, request):
-        """Historique des connexions de l'utilisateur courant (avec filtres).
-        Query params: success=true/false, since=ISO, until=ISO, limit=int (def 50)
-        """
+        """Historique des connexions de l'utilisateur courant (avec filtres)."""
         qs = HistoriqueConnexion.objects.filter(utilisateur=request.user)
         success = request.query_params.get('success')
         if success is not None:
@@ -440,11 +341,9 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         data = HistoriqueConnexionSerializer(qs, many=True).data
         return Response({'count': len(data), 'results': data})
 
-    @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated, IsAdminOrModerator])
+    @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated, IsAdminOrModerator], url_path='connexions-all')
     def connexions_all(self, request):
-        """Historique global des connexions (admin/modérateur) avec filtres.
-        Query params: user_id, success=true/false, since=ISO, until=ISO, limit=int (def 100)
-        """
+        """Historique global des connexions (admin/modérateur) avec filtres."""
         qs = HistoriqueConnexion.objects.all()
         user_id = request.query_params.get('user_id')
         if user_id:
@@ -471,12 +370,11 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         data = HistoriqueConnexionSerializer(qs, many=True).data
         return Response({'count': len(data), 'results': data})
 
-    @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated])
+    @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated], url_path='twofa-setup')
     def twofa_setup(self, request):
         """Crée/configure un appareil TOTP et renvoie un QR code (base64 PNG) et l'otpauth URL."""
         user = request.user
         device, _ = TOTPDevice.objects.get_or_create(user=user, name="totp-default")
-        # Generate QR for device.config_url
         img = qrcode.make(device.config_url)
         buf = io.BytesIO()
         img.save(buf, format="PNG")
@@ -486,7 +384,7 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
             'qrcode_png_base64': b64
         })
 
-    @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated])
+    @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated], url_path='twofa-verify')
     def twofa_verify(self, request):
         """Vérifie un code TOTP et confirme l'appareil."""
         token = request.data.get('token')
@@ -496,16 +394,121 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
             if device.verify_token(token):
                 device.confirmed = True
                 device.save(update_fields=['confirmed'])
+                try:
+                    user = request.user
+                    prefs = dict(getattr(user, 'preferences', {}) or {})
+                    if prefs.get('twofa_required'):
+                        prefs['twofa_required'] = False
+                        user.preferences = prefs
+                        user.save(update_fields=['preferences'])
+                except Exception:
+                    pass
                 return Response({'detail': '2FA activée et confirmée.'})
         return Response({'detail': 'Token invalide.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated])
+    @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated], url_path='twofa-disable')
     def twofa_disable(self, request):
         """Désactive le 2FA en supprimant les appareils TOTP de l'utilisateur."""
         qs = TOTPDevice.objects.filter(user=request.user)
         count = qs.count()
         qs.delete()
         return Response({'detail': f'2FA désactivée. Appareils supprimés: {count}.'})
+
+
+# --- Auth API (sans 2FA) ---
+class RegisterView(APIView):
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+    throttle_classes = [AnonRateThrottle]
+    throttle_scope = 'register'
+
+    def post(self, request):
+        s = InscriptionSerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+        user = s.save()
+        # Rendre inactif jusqu'à activation
+        if user.is_active:
+            user.is_active = False
+            user.save(update_fields=["is_active"])
+        # Générer uid/token et envoyer email d'activation
+        try:
+            uidb64, token = make_activation_uid_token(user)
+            activation_url = build_activation_link_uid(uidb64, token)
+            if user.email:
+                send_activation_email_uid.delay(user.email, activation_url)
+        except Exception:
+            pass
+        return Response({"detail": "Compte créé. Vérifiez votre email pour activer le compte."}, status=201)
+
+
+class ActivateView(APIView):
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+    throttle_classes = [AnonRateThrottle]
+    throttle_scope = 'activate'
+
+    def get(self, request):
+        uid = request.query_params.get('uid')
+        token = request.query_params.get('token')
+        if not uid or not token:
+            return Response({"detail": "uid et token requis."}, status=400)
+        user = check_activation_uid_token(uid, token, Utilisateur)
+        if not user:
+            return Response({"detail": "Token invalide ou expiré."}, status=400)
+        if not user.is_active:
+            user.is_active = True
+            user.save(update_fields=["is_active"])
+        return Response({"detail": "Compte activé."})
+
+    def post(self, request):
+        uid = request.data.get('uid')
+        token = request.data.get('token')
+        if not uid or not token:
+            return Response({"detail": "uid et token requis."}, status=400)
+        user = check_activation_uid_token(uid, token, Utilisateur)
+        if not user:
+            return Response({"detail": "Token invalide ou expiré."}, status=400)
+        if not user.is_active:
+            user.is_active = True
+            user.save(update_fields=["is_active"])
+        return Response({"detail": "Compte activé."})
+
+
+def web_activate_uid_page(request, uid: str, token: str):
+    user = check_activation_uid_token(uid, token, Utilisateur)
+    if not user:
+        return HttpResponseBadRequest('<h1>Activation échouée</h1><p>Token invalide ou expiré.</p>')
+    if not user.is_active:
+        user.is_active = True
+        user.save(update_fields=['is_active'])
+    return HttpResponse("<h1>Activation réussie</h1><p>Votre compte est activé. Vous pouvez vous connecter.</p>")
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class LoginView(APIView):
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+    throttle_classes = [AnonRateThrottle]
+    throttle_scope = 'login'
+
+    def post(self, request):
+        s = ConnexionSerializer(data=request.data, context={"request": request})
+        s.is_valid(raise_exception=True)
+        user = s.validated_data['user']
+        # JWT si activé
+        if getattr(settings, 'USE_JWT_AUTH', False) and HAS_JWT and RefreshToken is not None:
+            refresh = RefreshToken.for_user(user)
+            return Response({
+                'utilisateur': {'id': user.id, 'username': user.username, 'email': user.email},
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+            })
+        # Session sinon
+        try:
+            django_login(request, user)
+        except Exception:
+            pass
+        return Response({'utilisateur': {'id': user.id, 'username': user.username, 'email': user.email}})
 
 from rest_framework.decorators import api_view, permission_classes  # noqa: E402
 from django.contrib.sessions.models import Session  # noqa: E402

@@ -1,6 +1,9 @@
 from django.urls import path, include
+from rest_framework import permissions
 from rest_framework.routers import DefaultRouter
 from . import views
+from rest_framework_simplejwt.views import TokenRefreshView
+from .tokens import EmailTokenObtainPairView
 
 app_name = 'utilisateurs'
 
@@ -11,55 +14,17 @@ router.register(r'abonnements', views.AbonnementViewSet, basename='abonnements')
 
 urlpatterns = [
     path('api/', include(router.urls)),
-    path('api/auth/', include('rest_framework.urls', namespace='rest_framework')),
-    
-    # URLs supplémentaires pour les fonctionnalités spécifiques
-    path('api/utilisateurs/moi/statistiques-fidelite/', 
-         views.UtilisateurViewSet.as_view({'get': 'statistiques_fidelite'}), 
-         name='statistiques-fidelite'),
-    path('api/utilisateurs/moi/historique-remises/', 
-         views.UtilisateurViewSet.as_view({'get': 'historique_remises'}), 
-         name='historique-remises'),
-    path('api/utilisateurs/moi/appliquer-remise/', 
-         views.UtilisateurViewSet.as_view({'post': 'appliquer_remise'}), 
-         name='appliquer-remise'),
+    # Déplacer les URLs d'auth DRF sous un préfixe différent pour éviter de masquer /api/auth/login/
+    path('api/auth/session/', include('rest_framework.urls', namespace='rest_framework')),
+    # Nouvelles routes d'auth sans 2FA
+    path('api/auth/register/', views.RegisterView.as_view(), name='auth-register'),
+    path('api/auth/login/', views.LoginView.as_view(), name='auth-login'),
+    path('api/auth/activate/', views.ActivateView.as_view(), name='auth-activate'),
+    path('activate/<str:uid>/<str:token>/', views.web_activate_uid_page, name='web-activate-uid'),
+    # SimpleJWT (token via email uniquement)
+    path('api/token/', EmailTokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 ]
-
-# URLs JWT personnalisées
-jwt_urlpatterns = [
-    path('api/auth/inscription/', 
-         views.UtilisateurViewSet.as_view({'post': 'inscrire'}), 
-         name='inscription'),
-    path('api/auth/connexion/', 
-         views.UtilisateurViewSet.as_view({'post': 'connecter'}), 
-         name='connexion'),
-    path('api/auth/changer-mot-de-passe/', 
-         views.UtilisateurViewSet.as_view({'post': 'changer_mot_de_passe'}), 
-         name='changer-mot-de-passe'),
-    # Activation email
-    path('api/auth/activation/confirmer/<str:token>/', 
-         views.activer_compte, 
-         name='activation-confirmer'),
-    path('api/auth/activation/confirmer', 
-         views.activer_compte_query, 
-         name='activation-confirmer-query'),
-    path('api/auth/activation/renvoyer/', 
-         views.UtilisateurViewSet.as_view({'post': 'renvoyer_activation'}), 
-         name='activation-renvoyer'),
-    # Reset mot de passe
-    path('api/auth/mot-de-passe/demander/', 
-         views.demander_reset_mot_de_passe, 
-         name='reset-demander'),
-    path('api/auth/mot-de-passe/confirmer/<str:token>/', 
-         views.confirmer_reset_mot_de_passe, 
-         name='reset-confirmer'),
-    # Social logins
-    path('api/auth/google/', views.google_login, name='google-login'),
-    path('api/auth/facebook/', views.facebook_login, name='facebook-login'),
-    path('api/auth/apple/', views.apple_login, name='apple-login'),
-]
-
-urlpatterns += jwt_urlpatterns
 
 # Session management endpoints
 extra_patterns = [

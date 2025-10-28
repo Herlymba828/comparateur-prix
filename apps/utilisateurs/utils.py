@@ -194,6 +194,9 @@ class GenerateurRapport:
 # --- Activation email utils ---
 from django.core import signing  # noqa: E402
 from django.conf import settings  # noqa: E402
+from django.contrib.auth.tokens import default_token_generator  # noqa: E402
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode  # noqa: E402
+from django.utils.encoding import force_bytes, force_str  # noqa: E402
 
 ACTIVATION_SALT = "utilisateur-activation"
 RESET_SALT = "utilisateur-reset-mdp"
@@ -223,6 +226,29 @@ def construire_lien_activation(token: str) -> str:
     # Fallback: endpoint API
     api_base = os.getenv("BACKEND_URL", "http://localhost:8000")
     return f"{api_base.rstrip('/')}/api/utilisateurs/api/auth/activation/confirmer/{token}/"
+
+# --- UIDB64 + token (standard Django) activation helpers ---
+def make_activation_uid_token(user):
+    """Retourne (uidb64, token) pour l'activation (standard Django tokens)."""
+    uidb64 = urlsafe_base64_encode(force_bytes(user.pk))
+    token = default_token_generator.make_token(user)
+    return uidb64, token
+
+def check_activation_uid_token(uidb64: str, token: str, user_model):
+    """Valide (uidb64, token) et retourne l'utilisateur si valide, sinon None."""
+    try:
+        uid = force_str(urlsafe_base64_decode(uidb64))
+        user = user_model.objects.get(pk=uid)
+    except Exception:
+        return None
+    if default_token_generator.check_token(user, token):
+        return user
+    return None
+
+def build_activation_link_uid(uidb64: str, token: str) -> str:
+    """Construit le lien public: {PUBLIC_BASE_URL}/activate/<uidb64>/<token>/"""
+    base = os.getenv("PUBLIC_BASE_URL") or getattr(settings, "PUBLIC_BASE_URL", "https://mon-domaine.com")
+    return f"{base.rstrip('/')}/activate/{uidb64}/{token}/"
 
 # --- Reset mot de passe utils ---
 def generer_token_reset(utilisateur_id: int, email: str) -> str:

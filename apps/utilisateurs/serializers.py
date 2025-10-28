@@ -30,6 +30,15 @@ class InscriptionSerializer(serializers.ModelSerializer):
         
         return attrs
 
+    def create(self, validated_data):
+        # Retirer le champ de confirmation et hasher le mot de passe
+        validated_data.pop('password_confirmation', None)
+        password = validated_data.pop('password')
+        user = Utilisateur(**validated_data)
+        user.set_password(password)
+        user.save()
+        return user
+
 class HistoriqueConnexionSerializer(serializers.ModelSerializer):
     """Serializer pour l'historique des connexions utilisateur."""
     class Meta:
@@ -64,41 +73,49 @@ class ConfirmationResetMotDePasseSerializer(serializers.Serializer):
         return user
 
 class ConnexionSerializer(serializers.Serializer):
-    """Serializer pour l'authentification"""
+    """Serializer pour l'authentification (username OU email + password)."""
     
-    username = serializers.CharField()
+    identifiant = serializers.CharField(required=False)
+    username = serializers.CharField(required=False)
+    email = serializers.EmailField(required=False)
     password = serializers.CharField(write_only=True)
     
     def validate(self, attrs):
-        username = attrs.get('username')
+        # Supporter: identifiant | username | email
+        identifiant = attrs.get('identifiant') or attrs.get('username') or attrs.get('email')
         password = attrs.get('password')
         
-        if username and password:
+        if identifiant and password:
+            username = identifiant
+            # Si c'est un email explicite ou un identifiant contenant '@', mapper vers username
+            is_email = bool(attrs.get('email')) or ('@' in str(identifiant))
+            if is_email:
+                try:
+                    utilisateur = Utilisateur.objects.get(email__iexact=identifiant)
+                    username = utilisateur.username
+                except Utilisateur.DoesNotExist:
+                    raise serializers.ValidationError(
+                        {'detail': _('Identifiants invalides.')}, code='authorization'
+                    )
             user = authenticate(
                 request=self.context.get('request'),
                 username=username,
                 password=password
             )
-            
             if not user:
                 raise serializers.ValidationError(
-                    _('Identifiants invalides.'),
-                    code='authorization'
+                    {'detail': _('Identifiants invalides.')}, code='authorization'
                 )
-            
             if not user.is_active:
                 raise serializers.ValidationError(
-                    _('Ce compte est désactivé.'),
-                    code='authorization'
+                    {'detail': _('Ce compte est désactivé.')}, code='authorization'
                 )
-            
             attrs['user'] = user
         else:
             raise serializers.ValidationError(
-                _('Must include "username" and "password".'),
+                {'detail': _('Doit inclure "username" ou "email" et "password".')},
                 code='authorization'
             )
-        
         return attrs
 
 class ProfilUtilisateurSerializer(serializers.ModelSerializer):

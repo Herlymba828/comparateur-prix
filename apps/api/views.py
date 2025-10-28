@@ -1,5 +1,7 @@
 from django.http import JsonResponse
 from django.db.models import Min, Q, Count
+from django.utils.dateparse import parse_datetime, parse_date
+from datetime import datetime, time
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework.status import HTTP_200_OK
@@ -101,22 +103,88 @@ def autocomplete_produits(request):
 
 
 @api_view(["GET"])
-def homologations_stats(_request):
-    """Retourne quelques statistiques synthétiques pour l'homologation/monitoring."""
-    produits_count = Produit.objects.count()
-    magasins_count = Magasin.objects.count()
-    prix_count = Prix.objects.count()
-    # Date la plus récente de modification de prix si dispo (champ existant)
+def homologations_stats(request):
+    """Statistiques synthétiques filtrables pour l'homologation/monitoring.
+
+    Query params optionnels:
+      - produit_id | productId: filtrer sur un produit
+      - date_from | start: borne inférieure (datetime/date ISO)
+      - date_to   | end:   borne supérieure (datetime/date ISO)
+      - localisation: filtre texte sur Magasin.localisation (icontains)
+      - ville: filtre texte sur Magasin.ville.nom (icontains)
+      - ville_id: filtre exact sur Magasin.ville.id
+    """
+    produit_id = request.GET.get("produit_id") or request.GET.get("productId")
+    date_from = request.GET.get("date_from") or request.GET.get("start")
+    date_to = request.GET.get("date_to") or request.GET.get("end")
+    localisation = request.GET.get("localisation")
+    ville = request.GET.get("ville")
+    ville_id = request.GET.get("ville_id")
+
+    prix_qs = Prix.objects.all()
+
+    # Filtre produit
+    if produit_id:
+        try:
+            pid = int(produit_id)
+            prix_qs = prix_qs.filter(produit_id=pid)
+        except (TypeError, ValueError):
+            pass
+
+    # Filtres période (sur date_modification si dispo)
+    def _to_dt(val, end=False):
+        if not val:
+            return None
+        dt = parse_datetime(val)
+        if dt is not None:
+            return dt
+        d = parse_date(val)
+        if d is not None:
+            return datetime.combine(d, time.max if end else time.min)
+        return None
+
+    dt_from = _to_dt(date_from, end=False)
+    dt_to = _to_dt(date_to, end=True)
+    if dt_from:
+        prix_qs = prix_qs.filter(date_modification__gte=dt_from)
+    if dt_to:
+        prix_qs = prix_qs.filter(date_modification__lte=dt_to)
+
+    # Filtres localisation
+    if localisation:
+        prix_qs = prix_qs.filter(magasin__localisation__icontains=localisation)
+    if ville:
+        prix_qs = prix_qs.filter(magasin__ville__nom__icontains=ville)
+    if ville_id:
+        try:
+            vid = int(ville_id)
+            prix_qs = prix_qs.filter(magasin__ville_id=vid)
+        except (TypeError, ValueError):
+            pass
+
+    # Comptages filtrés
+    produits_count = prix_qs.values("produit_id").distinct().count()
+    magasins_count = prix_qs.values("magasin_id").distinct().count()
+    prix_count = prix_qs.count()
     latest_prix = (
-        Prix.objects.order_by('-date_modification')
+        prix_qs.order_by('-date_modification')
         .values_list('date_modification', flat=True)
         .first()
     )
+
     payload = {
         'produits': produits_count,
         'magasins': magasins_count,
         'prix': prix_count,
         'dernier_prix_mis_a_jour': latest_prix,
+        'filtres': {
+            'produit_id': produit_id,
+            'date_from': date_from,
+            'date_to': date_to,
+            'localisation': localisation,
+            'ville': ville,
+            'ville_id': ville_id,
+        },
         'ok': True,
     }
     return Response(payload, status=HTTP_200_OK)

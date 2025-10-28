@@ -52,6 +52,9 @@ python manage.py migrate
 # Voir les migrations en attente
 python manage.py showmigrations
 
+# Vérifier les tests
+python manage.py test -v 2
+
 # demarrer le script des services
 powershell -ExecutionPolicy Bypass -File .\scripts\start_services.ps1 -AutoPort -ServerPort 8001
 

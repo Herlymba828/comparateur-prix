@@ -43,6 +43,30 @@ def task_mise_a_jour_niveaux_fidelite():
         raise
 
 @shared_task
+def send_login_otp_email(user_email: str, otp_code: str):
+    """Envoie un code OTP de connexion par email."""
+    try:
+        sujet = _("Votre code de connexion")
+        message = _(
+            "Bonjour,\n\n"
+            "Voici votre code de connexion à usage unique :\n"
+            f"{otp_code}\n\n"
+            "Ce code est valable 5 minutes. Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.\n\n"
+            "Cordialement,\nL'équipe Comparateur Prix"
+        )
+        send_mail(
+            sujet,
+            message,
+            getattr(settings, 'DEFAULT_FROM_EMAIL', 'no-reply@example.com'),
+            [user_email],
+            fail_silently=False,
+        )
+        logger.info("Email OTP de connexion envoyé à %s", user_email)
+    except Exception as e:
+        logger.error("Erreur envoi email OTP à %s: %s", user_email, e)
+        raise
+
+@shared_task
 def send_reset_email(user_email: str, reset_token: str):
     """Envoie l'email de réinitialisation de mot de passe avec lien signé."""
     try:
@@ -90,6 +114,30 @@ def send_activation_email(user_email: str, activation_token: str):
         logger.info("Email d'activation envoyé à %s", user_email)
     except Exception as e:
         logger.error("Erreur envoi email d'activation à %s: %s", user_email, e)
+        raise
+
+@shared_task
+def send_activation_email_uid(user_email: str, activation_url: str):
+    """Envoie l'email d'activation (uidb64+token) en utilisant une URL déjà construite."""
+    try:
+        sujet = _("Activation de votre compte")
+        message = _(
+            "Bonjour,\n\n"
+            "Merci de votre inscription. Pour activer votre compte, cliquez sur le lien suivant :\n"
+            f"{activation_url}\n\n"
+            "Ce lien peut expirer. Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.\n\n"
+            "Cordialement,\nL'équipe Comparateur Prix"
+        )
+        send_mail(
+            sujet,
+            message,
+            getattr(settings, 'DEFAULT_FROM_EMAIL', 'no-reply@example.com'),
+            [user_email],
+            fail_silently=False,
+        )
+        logger.info("Email d'activation (uid) envoyé à %s", user_email)
+    except Exception as e:
+        logger.error("Erreur envoi email d'activation (uid) à %s: %s", user_email, e)
         raise
 
 @shared_task
