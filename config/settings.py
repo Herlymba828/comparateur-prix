@@ -29,8 +29,30 @@ load_dotenv(BASE_DIR / '.env')
 os.environ.setdefault('PGCLIENTENCODING', os.getenv('PGCLIENTENCODING', 'UTF8'))
 
 # SECURITY WARNING: don't run with debug turned on in production!
-_RAW_DEBUG = os.getenv('DJANGO_DEBUG', 'True')
-DEBUG = _RAW_DEBUG.lower() in ('1', 'true', 'yes', 'y')
+_RAW_DEBUG = os.getenv('DJANGO_DEBUG', '')
+# Désactiver le mode debug en production
+DEBUG = os.getenv('DJANGO_DEBUG', 'False').lower() in ('1', 'true', 'yes', 'y')
+
+# Configuration de la sécurité en production
+if not DEBUG:
+    # HSTS - forcer HTTPS
+    SECURE_HSTS_SECONDS = 31536000  # 1 an
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    
+    # Sécurité des cookies
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    CSRF_COOKIE_HTTPONLY = True
+    SECURE_SSL_REDIRECT = True
+    
+    # Protection contre le clickjacking
+    X_FRAME_OPTIONS = 'DENY'
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_BROWSER_XSS_FILTER = True
+    
+    # Protection contre les attaques par clignotement (clickjacking)
+    SECURE_REFERRER_POLICY = 'same-origin'
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
@@ -41,7 +63,17 @@ if not SECRET_KEY:
     else:
         raise ImproperlyConfigured('DJANGO_SECRET_KEY must be set in production')
 
-ALLOWED_HOSTS = [h for h in os.getenv('DJANGO_ALLOWED_HOSTS', '').split(',') if h] or (['localhost', '127.0.0.1'] if DEBUG else [])
+# Configuration des hôtes autorisés
+ALLOWED_HOSTS = [
+    'votredomaine.com',  # Remplacez par votre domaine
+    'localhost',  # Pour les tests locaux
+    '127.0.0.1',
+]
+
+# Si vous avez une variable d'environnement DJANGO_ALLOWED_HOSTS, elle écrasera la configuration ci-dessus
+env_allowed_hosts = os.getenv('DJANGO_ALLOWED_HOSTS')
+if env_allowed_hosts:
+    ALLOWED_HOSTS = [h.strip() for h in env_allowed_hosts.split(',') if h.strip()]
 
 # Utiliser le modèle utilisateur personnalisé
 AUTH_USER_MODEL = 'utilisateurs.Utilisateur'
@@ -141,15 +173,6 @@ ADMIN_URL = os.getenv('DJANGO_ADMIN_URL', 'admin/')
 if not ADMIN_URL.endswith('/'):
     ADMIN_URL = ADMIN_URL + '/'
 
-# Optional SQLite fallback for development
-if os.getenv('USE_SQLITE_DEV', 'False').lower() in ('1', 'true', 'yes', 'y') and DEBUG:
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
-        }
-    }
-
 # En production, exiger des identifiants sûrs et sécuriser la connexion DB
 if not DEBUG:
     if not os.getenv('POSTGRES_PASSWORD'):
@@ -239,18 +262,25 @@ CELERY_TIMEZONE = TIME_ZONE
 # Retry broker connection on startup (Celery 6+ recommendation)
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = os.getenv('CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP', 'True').lower() in ('1', 'true', 'yes', 'y')
 
+# Site URL
+SITE_URL = os.getenv('SITE_URL', 'https://www.comparateurdeprix.com')
+
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = 'static/'
-# Collected static files (e.g., via collectstatic)
-STATIC_ROOT = BASE_DIR / 'staticfiles'
-# Aucune source statique côté projet (frontend supprimé). Les fichiers statiques collectés iront dans STATIC_ROOT.
-STATICFILES_DIRS = []
+# Configuration des fichiers statiques et médias
+STATIC_URL = '/static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+STATICFILES_DIRS = [os.path.join(BASE_DIR, 'static')]
 
-# Media files
+# Configuration des médias
 MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+# Configuration du stockage des fichiers statiques
+if not DEBUG:
+    # Utilisez un stockage personnalisé pour les fichiers statiques en production
+    STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 USE_JWT_AUTH = os.getenv('USE_JWT_AUTH', 'False').lower() in ('1', 'true', 'yes', 'y')
 
@@ -258,11 +288,26 @@ DEFAULT_AUTH_CLASSES = [
     # Optionnel: JWT si activé par env et dépendance installée
 ]
 if USE_JWT_AUTH:
-    DEFAULT_AUTH_CLASSES.append('rest_framework_simplejwt.authentication.JWTAuthentication')
-# SessionAuthentication utile pour l'admin/browsable API. BasicAuthentication seulement en dev.
-DEFAULT_AUTH_CLASSES.append('rest_framework.authentication.SessionAuthentication')
-if DEBUG:
-    DEFAULT_AUTH_CLASSES.append('rest_framework.authentication.BasicAuthentication')
+    # Configuration de l'authentification
+    DEFAULT_AUTH_CLASSES = [
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ]
+
+# En production, on désactive l'authentification par session pour l'API
+if not DEBUG:
+    REST_FRAMEWORK = {
+        'DEFAULT_AUTHENTICATION_CLASSES': DEFAULT_AUTH_CLASSES,
+        'DEFAULT_PERMISSION_CLASSES': [
+            'rest_framework.permissions.IsAuthenticated',
+        ],
+        'DEFAULT_RENDERER_CLASSES': [
+            'rest_framework.renderers.JSONRenderer',
+        ],
+        'DEFAULT_THROTTLE_RATES': {
+            'anon': '100/day',
+            'user': '1000/day',
+        }
+    }
 
 _default_perms = ['rest_framework.permissions.AllowAny'] if DEBUG else ['rest_framework.permissions.IsAuthenticatedOrReadOnly']
 REST_FRAMEWORK = {
@@ -343,17 +388,29 @@ else:
     }
 
 # CORS configuration (adjust origins via env)
-if DEBUG:
-    # In development, allow all by default (can be tightened via env)
-    CORS_ALLOW_ALL_ORIGINS = os.getenv('CORS_ALLOW_ALL_ORIGINS', 'True').lower() in ('1', 'true', 'yes', 'y')
-else:
-    # In production, disallow all by default; must be explicitly configured via env
-    CORS_ALLOW_ALL_ORIGINS = os.getenv('CORS_ALLOW_ALL_ORIGINS', 'False').lower() in ('1', 'true', 'yes', 'y')
-    # Recommended: set specific allowed origins in production
-CORS_ALLOWED_ORIGINS = [o for o in os.getenv('CORS_ALLOWED_ORIGINS', '').split(',') if o]
+# Configuration CORS pour la production
+CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOWED_ORIGINS = [
+    "https://comparateurdeprix.com",
+    "https://www.comparateurdeprix.com",
+]
+
+# Si vous avez besoin d'autoriser des origines spécifiques via des variables d'environnement
+cors_allowed_origins = os.getenv('CORS_ALLOWED_ORIGINS', '')
+if cors_allowed_origins:
+    CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_allowed_origins.split(',') if origin.strip()]
 
 # Optional: trust proxies and CSRF origins if served behind reverse proxy
-CSRF_TRUSTED_ORIGINS = [o for o in os.getenv('CSRF_TRUSTED_ORIGINS', '').split(',') if o]
+# Configuration CSRF
+CSRF_TRUSTED_ORIGINS = [
+    'https://comparateurdeprix.com',
+    'https://www.comparateurdeprix.com'
+]
+
+# Si vous avez des origines supplémentaires dans les variables d'environnement
+env_csrf_origins = os.getenv('CSRF_TRUSTED_ORIGINS', '')
+if env_csrf_origins:
+    CSRF_TRUSTED_ORIGINS.extend([o.strip() for o in env_csrf_origins.split(',') if o.strip()])
 
 # Google Maps API key (used for Distance Matrix / JS Maps)
 GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY')

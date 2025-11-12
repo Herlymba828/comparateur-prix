@@ -92,3 +92,6 @@ docker run -d --name es01 -p 9200:9200 -e "discovery.type=single-node" -e "xpack
 
 # Script pour géocoder les magasins
 python manage.py geocode_magasins --only-missing --limit 200
+
+# pour voir l'ip de la machine
+ipconfig 

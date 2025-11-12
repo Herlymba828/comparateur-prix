@@ -1,0 +1,13 @@
+{
+  "mappings": {
+    "properties": {
+      "id": { "type": "keyword" },
+      "nom": { "type": "text", "analyzer": "fr_text" },
+      "marque": { "type": "keyword" },
+      "categorie_id": { "type": "keyword" },
+      "categorie_nom": { "type": "keyword" },
+      "min_prix": { "type": "float" },
+      "devise": { "type": "keyword" }
+    }
+  }
+}
