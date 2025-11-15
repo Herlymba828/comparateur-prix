@@ -180,7 +180,12 @@ except Exception as e:
                 $ok = $false
                 for ($i=0; $i -lt 5; $i++) {
                     $res = Invoke-RedisPing -url $target
-                    if ($res.Code -eq 0) { $ok = $true; break }
+                    # Check both exit code and output content
+                    $outTrimmed = ($res.Out -replace '\s+', '').Trim()
+                    if ($res.Code -eq 0 -or $outTrimmed -eq 'OK') {
+                        $ok = $true
+                        break
+                    }
                     Start-Sleep -Seconds 1
                 }
                 if ($ok) {
@@ -225,14 +230,20 @@ if (-not $NoServer) {
             Write-Warn "Aucun port libre trouvé entre $ServerPort et $($ServerPort+19). Tentative sur $ServerPort."
         }
     }
+    # Verify port is actually free before starting (even if AutoPort didn't find one)
+    if (-not (Test-PortFree -Port $finalPort)) {
+        Write-Err "Le port $finalPort est déjà occupé. Arrêtez le processus qui l'utilise ou utilisez un autre port avec -ServerPort."
+        Write-Err "Pour trouver le processus: Get-NetTCPConnection -LocalPort $finalPort | Select-Object OwningProcess"
+    }
     # Ensure ML init is enabled only for server process (can be disabled during migrations below)
     # Escape $ so that the env var is set in the child session, not expanded in the parent
     $serverCmd = "`$env:RECO_INIT_MODELS_ON_STARTUP='1'; python manage.py runserver ${ServerBind}:$finalPort"
     Start-Window -Title "Django Server (${ServerBind}:$finalPort)" -WorkingDir $ProjectDir -Command $serverCmd
     if ($OpenBrowser) {
         Start-Sleep -Seconds 2
-        # Avoid PowerShell parsing $ServerBind: as a scoped variable by using -f formatting
-        $url = "http://{0}:{1}/" -f $ServerBind, $finalPort
+        # Use localhost for browser (0.0.0.0 is not accessible by browsers)
+        $browserHost = if ($ServerBind -eq "0.0.0.0") { "localhost" } else { $ServerBind }
+        $url = "http://{0}:{1}/" -f $browserHost, $finalPort
         Start-Process $url
     }
 }

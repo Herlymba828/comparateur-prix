@@ -26,6 +26,12 @@ try:
 except Exception:  # simplejwt non installé
     TokenObtainPairView = TokenRefreshView = None
 
+# Import des vues de recommandations pour les alias legacy
+try:
+    from apps.recommandations import views as reco_views
+except ImportError:
+    reco_views = None
+
 urlpatterns = [
     path(settings.ADMIN_URL, admin.site.urls),
     path('api/produits/', include('apps.produits.urls')),
@@ -35,6 +41,14 @@ urlpatterns = [
     path('api/recommandations/', include('apps.recommandations.urls')),
     path('api/analyses/', include('apps.analyses.urls')),
     path('api/', include('apps.api.urls')),
+    # Alias global pour compatibilité frontend
+    path('api/categories/', include('apps.produits.urls')),  # Redirige vers /api/produits/categories/
+    # Alias legacy pour les recommandations (si les vues sont disponibles)
+    *([
+        path('api/reco/pour-vous/', reco_views.recommandations_pour_moi, name='reco-pour-vous-legacy'),
+        path('api/reco/tendances/', reco_views.recommandations_populaires, name='reco-tendances-legacy'),
+        path('api/reco/produits/<int:produit_id>/similaires/', reco_views.recommandations_pour_produit_url, name='reco-produits-similaires'),
+    ] if reco_views else []),
     # OpenAPI schema & docs
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
     path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),

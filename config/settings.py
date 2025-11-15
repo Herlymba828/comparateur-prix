@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 from pathlib import Path
 import os
+from datetime import timedelta
 from dotenv import load_dotenv
 from django.core.exceptions import ImproperlyConfigured
 from secrets import token_urlsafe
@@ -23,14 +24,63 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # Load environment variables from a .env file if present
-load_dotenv(BASE_DIR / '.env')
+# Essayer plusieurs emplacements possibles pour le fichier .env
+env_paths = [
+    BASE_DIR / '.env',
+    BASE_DIR.parent / '.env',
+    Path('/home/rs2694021ez6eg8n/comparer1/comparateur-prix/.env'),
+    Path('/home/rs2694021ez6eg8n/public_html/comparer/.env'),
+]
+env_loaded = False
+for env_path in env_paths:
+    if env_path.exists():
+        load_dotenv(env_path, override=True)
+        env_loaded = True
+        break
+# Si aucun fichier .env n'a été trouvé, essayer le chargement par défaut
+if not env_loaded:
+    load_dotenv(BASE_DIR / '.env')
 # Force client encoding for PostgreSQL at libpq level before any connection
 # Allow override via env (set to 'LATIN1' if your server/cluster is Latin-1)
 os.environ.setdefault('PGCLIENTENCODING', os.getenv('PGCLIENTENCODING', 'UTF8'))
 
 # SECURITY WARNING: don't run with debug turned on in production!
-_RAW_DEBUG = os.getenv('DJANGO_DEBUG', 'True')
-DEBUG = _RAW_DEBUG.lower() in ('1', 'true', 'yes', 'y')
+_RAW_DEBUG = os.getenv('DJANGO_DEBUG', '')
+# Désactiver le mode debug en production
+DEBUG = os.getenv('DJANGO_DEBUG', 'False').lower() in ('1', 'true', 'yes', 'y')
+
+# Configuration de la sécurité en production
+if not DEBUG:
+    # En production
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_SSL_REDIRECT = True
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SECURE_REFERRER_POLICY = 'same-origin'
+    X_FRAME_OPTIONS = 'DENY'
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_BROWSER_XSS_FILTER = True
+else:
+    # En développement
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SECURE = False
+    SECURE_SSL_REDIRECT = False
+    
+    # Désactiver la vérification CSRF pour les tests
+    CSRF_TRUSTED_ORIGINS = [
+        'http://localhost:19000',
+        'http://localhost:19006',
+        'http://localhost:8001',
+        'http://192.168.1.67:19000',
+        'http://192.168.1.67:8000',
+        'http://192.168.1.67:8001',
+        'http://192.168.1.65:19000',
+        'http://192.168.1.65:19006',
+        'http://192.168.1.65:8000',
+        'http://192.168.1.65:8001',
+    ]
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
@@ -41,10 +91,37 @@ if not SECRET_KEY:
     else:
         raise ImproperlyConfigured('DJANGO_SECRET_KEY must be set in production')
 
-ALLOWED_HOSTS = [h for h in os.getenv('DJANGO_ALLOWED_HOSTS', '').split(',') if h] or (['localhost', '127.0.0.1'] if DEBUG else [])
+# Configuration des hôtes autorisés
+# Base: toujours autoriser localhost et les IPs locales pour le développement
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '192.168.1.67', '192.168.1.65']
+
+# En production, ajouter les domaines de production
+if not DEBUG:
+    ALLOWED_HOSTS.extend([
+        'ftp.navixtechnology.com',
+        'www.ftp.navixtechnology.com',
+    ])
+
+# Si vous avez une variable d'environnement DJANGO_ALLOWED_HOSTS, elle écrasera la configuration ci-dessus
+env_allowed_hosts = os.getenv('DJANGO_ALLOWED_HOSTS')
+if env_allowed_hosts:
+    ALLOWED_HOSTS = [h.strip() for h in env_allowed_hosts.split(',') if h.strip()]
+
+# Garantir que les hôtes essentiels sont toujours présents (même si écrasés par env)
+essential_hosts = ['localhost', '127.0.0.1', '192.168.1.67', '192.168.1.65']
+for host in essential_hosts:
+    if host not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(host)
+
+# Garantir que le domaine de production est toujours présent en production
+if not DEBUG:
+    production_hosts = ['ftp.navixtechnology.com', 'www.ftp.navixtechnology.com']
+    for host in production_hosts:
+        if host not in ALLOWED_HOSTS:
+            ALLOWED_HOSTS.append(host)
 
 # Utiliser le modèle utilisateur personnalisé
-AUTH_USER_MODEL = 'utilisateurs.Utilisateur'
+AUTH_USER_MODEL = 'utilisateurs.Utilisateur'        
 
 # Ne pas initialiser les modèles de recommandation (sklearn/xgboost) au démarrage
 RECO_INIT_MODELS_ON_STARTUP = os.getenv('RECO_INIT_MODELS_ON_STARTUP', 'False').lower() in ('1', 'true', 'yes', 'y')
@@ -79,9 +156,61 @@ INSTALLED_APPS = [
 
 # Définir les origines CORS via variables d'environnement (voir plus bas). Éviter des valeurs en dur ici.
 
+# Configuration CORS
+# En développement, autoriser toutes les origines pour faciliter les tests
+# En production, utiliser CORS_ALLOWED_ORIGINS avec des origines spécifiques
+CORS_ALLOW_ALL_ORIGINS = DEBUG  # True seulement en développement
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOWED_ORIGINS = [
+    'http://localhost:19006',  # Port par défaut de l'émulateur Android
+    'http://localhost:19000',  # Port par défaut de l'émulateur iOS
+    'http://localhost:19001',
+    'http://localhost:19002',
+    'http://localhost:3000',   # Pour React en développement
+    'http://192.168.1.65:19000',  # Votre adresse IP locale pour l'émulateur
+    'http://192.168.1.65:19006',
+    'http://192.168.1.65:8000',   # Votre serveur Django
+]
+
+# Autoriser toutes les méthodes HTTP
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
+
+# Autoriser tous les en-têtes
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
+
+# Configuration REST Framework (unifiée - voir plus bas pour la configuration complète)
+# Cette section est commentée car la configuration complète est définie plus bas
+
+# Configuration JWT
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
+}
+
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'corsheaders.middleware.CorsMiddleware',
+    'corsheaders.middleware.CorsMiddleware',  # Doit être placé avant CommonMiddleware
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.gzip.GZipMiddleware',
@@ -121,41 +250,93 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.getenv('POSTGRES_DB', 'soutenance2'),
-        'USER': os.getenv('POSTGRES_USER', 'postgres'),
-        'PASSWORD': os.getenv('POSTGRES_PASSWORD', ''),
-        'HOST': os.getenv('POSTGRES_HOST', 'localhost'),
-        'PORT': os.getenv('POSTGRES_PORT', '5432'),
-        'OPTIONS': {
-            # Force UTF-8 client encoding for the DB session
-            'options': '-c client_encoding=UTF8',
+# Support MySQL avec PyMySQL (si mysqlclient ne fonctionne pas)
+try:
+    import pymysql
+    pymysql.install_as_MySQLdb()
+except ImportError:
+    pass
+
+# Détecter le type de base de données depuis les variables d'environnement
+DB_ENGINE = os.getenv('DB_ENGINE', 'postgresql').lower()
+DB_NAME = os.getenv('DB_NAME') or os.getenv('POSTGRES_DB') or os.getenv('MYSQL_DB', 'soutenance2')
+DB_USER = os.getenv('DB_USER') or os.getenv('POSTGRES_USER') or os.getenv('MYSQL_USER', 'postgres')
+# Lire DB_PASSWORD en essayant plusieurs variables d'environnement possibles
+# Note: os.getenv retourne None si la variable n'existe pas, donc on utilise '' comme fallback
+DB_PASSWORD = (
+    os.getenv('DB_PASSWORD') or 
+    os.getenv('POSTGRES_PASSWORD') or 
+    os.getenv('MYSQL_PASSWORD') or 
+    ''
+)
+DB_HOST = os.getenv('DB_HOST') or os.getenv('POSTGRES_HOST') or os.getenv('MYSQL_HOST', 'localhost')
+DB_PORT = os.getenv('DB_PORT') or os.getenv('POSTGRES_PORT') or os.getenv('MYSQL_PORT', '3306' if DB_ENGINE == 'mysql' else '5432')
+
+if DB_ENGINE == 'mysql':
+    # Configuration MySQL/MariaDB
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.mysql',
+            'NAME': DB_NAME,
+            'USER': DB_USER,
+            'PASSWORD': DB_PASSWORD,
+            'HOST': DB_HOST,
+            'PORT': DB_PORT,
+            'OPTIONS': {
+                'charset': 'utf8mb4',
+                'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
+            },
+        }
+    }
+else:
+    # Configuration PostgreSQL (par défaut)
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': DB_NAME,
+            'USER': DB_USER,
+            'PASSWORD': DB_PASSWORD,
+            'HOST': DB_HOST,
+            'PORT': DB_PORT,
+            'OPTIONS': {
+                # Force UTF-8 client encoding for the DB session
+                'options': '-c client_encoding=UTF8',
+            },
         },
-    },
-}
+    }
 
 # Admin URL paramétrable (obfuscation basique en prod)
 ADMIN_URL = os.getenv('DJANGO_ADMIN_URL', 'admin/')
 if not ADMIN_URL.endswith('/'):
     ADMIN_URL = ADMIN_URL + '/'
 
-# Optional SQLite fallback for development
-if os.getenv('USE_SQLITE_DEV', 'False').lower() in ('1', 'true', 'yes', 'y') and DEBUG:
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
-        }
-    }
-
 # En production, exiger des identifiants sûrs et sécuriser la connexion DB
 if not DEBUG:
-    if not os.getenv('POSTGRES_PASSWORD'):
-        raise ImproperlyConfigured('POSTGRES_PASSWORD must be set in production')
+    if not DB_PASSWORD:
+        # Déterminer le nom de la variable d'environnement attendue selon le type de DB
+        if DB_ENGINE == 'mysql':
+            expected_var = 'DB_PASSWORD ou MYSQL_PASSWORD'
+        else:
+            expected_var = 'DB_PASSWORD ou POSTGRES_PASSWORD'
+        
+        # Diagnostic: vérifier quelles variables sont présentes
+        db_password_present = bool(os.getenv('DB_PASSWORD'))
+        postgres_password_present = bool(os.getenv('POSTGRES_PASSWORD'))
+        mysql_password_present = bool(os.getenv('MYSQL_PASSWORD'))
+        
+        error_msg = (
+            f'Le mot de passe de la base de données doit être défini en production.\n'
+            f'Type de DB détecté: {DB_ENGINE.upper()}\n'
+            f'Variables d\'environnement vérifiées:\n'
+            f'  - DB_PASSWORD: {"présente" if db_password_present else "absente"}\n'
+            f'  - POSTGRES_PASSWORD: {"présente" if postgres_password_present else "absente"}\n'
+            f'  - MYSQL_PASSWORD: {"présente" if mysql_password_present else "absente"}\n'
+            f'Veuillez définir {expected_var} dans votre fichier .env.\n'
+            f'Emplacement attendu du fichier .env: {BASE_DIR / ".env"}'
+        )
+        raise ImproperlyConfigured(error_msg)
     # Activer SSL vers PostgreSQL par défaut (désactivable via POSTGRES_SSL_REQUIRE=false)
-    if os.getenv('POSTGRES_SSL_REQUIRE', 'True').lower() in ('1', 'true', 'yes', 'y'):
+    if DB_ENGINE == 'postgresql' and os.getenv('POSTGRES_SSL_REQUIRE', 'True').lower() in ('1', 'true', 'yes', 'y'):
         DATABASES['default'].setdefault('OPTIONS', {})
         DATABASES['default']['OPTIONS']['sslmode'] = 'require'
 
@@ -239,37 +420,65 @@ CELERY_TIMEZONE = TIME_ZONE
 # Retry broker connection on startup (Celery 6+ recommendation)
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = os.getenv('CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP', 'True').lower() in ('1', 'true', 'yes', 'y')
 
+# Site URL
+SITE_URL = os.getenv('SITE_URL', 'https://www.comparateurdeprix.com')
+
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = 'static/'
-# Collected static files (e.g., via collectstatic)
-STATIC_ROOT = BASE_DIR / 'staticfiles'
-# Aucune source statique côté projet (frontend supprimé). Les fichiers statiques collectés iront dans STATIC_ROOT.
-STATICFILES_DIRS = []
+# Configuration des fichiers statiques et médias
+STATIC_URL = '/static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+# Ajouter le répertoire static seulement s'il existe pour éviter l'avertissement
+static_dir = os.path.join(BASE_DIR, 'static')
+STATICFILES_DIRS = [static_dir] if os.path.exists(static_dir) else []
 
-# Media files
+# Configuration des médias
 MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
-USE_JWT_AUTH = os.getenv('USE_JWT_AUTH', 'False').lower() in ('1', 'true', 'yes', 'y')
+# Configuration du stockage des fichiers statiques
+if not DEBUG:
+    # Utilisez un stockage personnalisé pour les fichiers statiques en production
+    STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
-DEFAULT_AUTH_CLASSES = [
-    # Optionnel: JWT si activé par env et dépendance installée
-]
+USE_JWT_AUTH = os.getenv('USE_JWT_AUTH', 'True' if DEBUG else 'False').lower() in ('1', 'true', 'yes', 'y')
+
+DEFAULT_AUTH_CLASSES = []
 if USE_JWT_AUTH:
-    DEFAULT_AUTH_CLASSES.append('rest_framework_simplejwt.authentication.JWTAuthentication')
-# SessionAuthentication utile pour l'admin/browsable API. BasicAuthentication seulement en dev.
-DEFAULT_AUTH_CLASSES.append('rest_framework.authentication.SessionAuthentication')
-if DEBUG:
-    DEFAULT_AUTH_CLASSES.append('rest_framework.authentication.BasicAuthentication')
+    # Configuration de l'authentification JWT
+    try:
+        DEFAULT_AUTH_CLASSES = [
+            'rest_framework_simplejwt.authentication.JWTAuthentication',
+        ]
+    except ImportError:
+        # Si simplejwt n'est pas installé, utiliser une liste vide
+        DEFAULT_AUTH_CLASSES = []
 
+# Configuration REST Framework (unifiée)
 _default_perms = ['rest_framework.permissions.AllowAny'] if DEBUG else ['rest_framework.permissions.IsAuthenticatedOrReadOnly']
+
+# Classes d'authentification par défaut
+_default_auth_classes = DEFAULT_AUTH_CLASSES.copy()
+if DEBUG:
+    # En développement, toujours ajouter SessionAuthentication pour la browsable API
+    if 'rest_framework.authentication.SessionAuthentication' not in _default_auth_classes:
+        _default_auth_classes.append('rest_framework.authentication.SessionAuthentication')
+    
+    # En développement, si JWT n'est pas activé, l'activer automatiquement
+    if not USE_JWT_AUTH and 'rest_framework_simplejwt.authentication.JWTAuthentication' not in _default_auth_classes:
+        try:
+            _default_auth_classes.insert(0, 'rest_framework_simplejwt.authentication.JWTAuthentication')
+        except ImportError:
+            pass  # Si simplejwt n'est pas installé, ignorer
+
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': _default_perms,
-    'DEFAULT_AUTHENTICATION_CLASSES': DEFAULT_AUTH_CLASSES,
+    'DEFAULT_AUTHENTICATION_CLASSES': _default_auth_classes,
     'DEFAULT_FILTER_BACKENDS': [
-        'django_filters.rest_framework.DjangoFilterBackend'
+        'django_filters.rest_framework.DjangoFilterBackend',
+        'rest_framework.filters.SearchFilter',
+        'rest_framework.filters.OrderingFilter',
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
@@ -286,7 +495,15 @@ REST_FRAMEWORK = {
         'login': os.getenv('DRF_THROTTLE_LOGIN', '10/min'),
     },
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    # Renderers
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+    ],
 }
+
+# En développement, ajouter la Browsable API
+if DEBUG:
+    REST_FRAMEWORK['DEFAULT_RENDERER_CLASSES'].append('rest_framework.renderers.BrowsableAPIRenderer')
 
 # OpenAPI / Swagger settings
 SPECTACULAR_SETTINGS = {
@@ -315,11 +532,21 @@ def _read_file_or_none(path: str):
     return None
 
 _simple_jwt_common = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=int(os.getenv('JWT_ACCESS_MIN', '15'))),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=int(os.getenv('JWT_REFRESH_DAYS', '7'))),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=int(os.getenv('JWT_ACCESS_MIN', '60'))),  # 1 heure par défaut
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=int(os.getenv('JWT_REFRESH_DAYS', '30'))),  # 30 jours par défaut
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'AUTH_HEADER_TYPES': ('Bearer',),
+    'AUTH_HEADER_NAME': 'Authorization',
+    'USER_ID_FIELD': 'id',
+    'USER_ID_CLAIM': 'user_id',
+    'USER_AUTHENTICATION_RULE': 'rest_framework_simplejwt.authentication.default_user_authentication_rule',
+    'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
+    'TOKEN_TYPE_CLAIM': 'token_type',
+    'JTI_CLAIM': 'jti',
+    'SLIDING_TOKEN_REFRESH_EXP_CLAIM': 'refresh_exp',
+    'SLIDING_TOKEN_LIFETIME': timedelta(minutes=5),
+    'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=1),
 }
 
 if JWT_ALG == 'RS256':
@@ -343,17 +570,60 @@ else:
     }
 
 # CORS configuration (adjust origins via env)
+# Configuration CORS pour la production et le développement mobile
+CORS_ALLOW_ALL_ORIGINS = DEBUG  # Autoriser toutes les origines en développement
+
+# Origines autorisées en production
+CORS_ALLOWED_ORIGINS = [
+    "https://comparateurdeprix.com",
+    "https://www.comparateurdeprix.com",
+    "https://ftp.navixtechnology.com",
+    "http://ftp.navixtechnology.com",  # Si HTTP est utilisé temporairement
+]
+
+# Ajouter des origines depuis les variables d'environnement
+cors_allowed_origins = os.getenv('CORS_ALLOWED_ORIGINS', '')
+if cors_allowed_origins:
+    CORS_ALLOWED_ORIGINS.extend([origin.strip() for origin in cors_allowed_origins.split(',') if origin.strip()])
+
+# Autoriser les requêtes depuis les appareils mobiles en développement
 if DEBUG:
-    # In development, allow all by default (can be tightened via env)
-    CORS_ALLOW_ALL_ORIGINS = os.getenv('CORS_ALLOW_ALL_ORIGINS', 'True').lower() in ('1', 'true', 'yes', 'y')
-else:
-    # In production, disallow all by default; must be explicitly configured via env
-    CORS_ALLOW_ALL_ORIGINS = os.getenv('CORS_ALLOW_ALL_ORIGINS', 'False').lower() in ('1', 'true', 'yes', 'y')
-    # Recommended: set specific allowed origins in production
-CORS_ALLOWED_ORIGINS = [o for o in os.getenv('CORS_ALLOWED_ORIGINS', '').split(',') if o]
+    CORS_ALLOWED_ORIGINS.extend([
+        'http://localhost:19006',  # Port par défaut de l'émulateur Android
+        'http://localhost:19000',  # Port par défaut de l'émulateur iOS
+        'http://localhost:19001',
+        'http://localhost:19002',
+        'http://192.168.1.65:19000',  # Votre adresse IP locale pour l'émulateur
+        'http://192.168.1.65:19006',
+        'http://192.168.1.65:8000',   # Votre serveur Django
+    ])
 
 # Optional: trust proxies and CSRF origins if served behind reverse proxy
-CSRF_TRUSTED_ORIGINS = [o for o in os.getenv('CSRF_TRUSTED_ORIGINS', '').split(',') if o]
+# Configuration CSRF
+CSRF_TRUSTED_ORIGINS = [
+    'https://comparateurdeprix.com',
+    'https://www.comparateurdeprix.com',
+    'https://ftp.navixtechnology.com',
+    'http://ftp.navixtechnology.com',  # Si HTTP est utilisé temporairement
+]
+
+# Ajouter des origines CSRF depuis les variables d'environnement
+env_csrf_origins = os.getenv('CSRF_TRUSTED_ORIGINS', '')
+if env_csrf_origins:
+    CSRF_TRUSTED_ORIGINS.extend([o.strip() for o in env_csrf_origins.split(',') if o.strip()])
+
+# Ajouter les origines de développement mobile en mode debug
+if DEBUG:
+    CSRF_TRUSTED_ORIGINS.extend([
+        'http://localhost:19006',
+        'http://localhost:19000',
+        'http://localhost:19001',
+        'http://localhost:19002',
+        'http://192.168.1.65:19000',
+        'http://192.168.1.65:19006',
+        'http://192.168.1.65:8000',
+        'http://192.168.1.65:8001',
+    ])
 
 # Google Maps API key (used for Distance Matrix / JS Maps)
 GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY')

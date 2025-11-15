@@ -26,7 +26,7 @@ HTTP_PROXY = os.getenv('DGCCRF_PROXY', '')
 LOG_FILE = os.getenv('DGCCRF_LOG_FILE', '')
 STATE_FILE = os.getenv('DGCCRF_STATE_FILE', '.dgccrf_state.json')
 CHECKPOINT_PATH = os.getenv('DGCCRF_CHECKPOINT_PATH', '.dgccrf_checkpoint.json')
-SAVE_TO_DB = os.getenv('DGCCRF_SAVE_TO_DB', 'false').lower() == 'true'
+SAVE_TO_DB = os.getenv('DGCCRF_SAVE_TO_DB', 'true').lower() == 'true'
 PRIX_HOMOLOGUE_URL = os.getenv('DGCCRF_PRIX_HOMOLOGUE_URL', 'https://www.dgccrf.ga/echo-prix-homologue')
 LISTE_PRODUIT_URL = os.getenv('DGCCRF_LISTE_PRODUIT_URL', 'https://www.dgccrf.ga/echo-liste-produit')
 PRODUIT_PETROLIER_URL = os.getenv('DGCCRF_PRODUIT_PETROLIER_URL', 'https://www.dgccrf.ga/echo-produit-petrolier')
@@ -45,9 +45,18 @@ if not logger.handlers:
     handler.setFormatter(formatter)
     logger.addHandler(handler)
     if LOG_FILE:
-        file_handler = logging.FileHandler(LOG_FILE, encoding='utf-8')
-        file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
+        try:
+            # Créer le répertoire si nécessaire
+            log_dir = os.path.dirname(LOG_FILE)
+            if log_dir and not os.path.exists(log_dir):
+                os.makedirs(log_dir, exist_ok=True)
+            file_handler = logging.FileHandler(LOG_FILE, encoding='utf-8')
+            file_handler.setFormatter(formatter)
+            logger.addHandler(file_handler)
+        except Exception as exc:
+            # Si on ne peut pas créer le fichier de log, continuer sans
+            # Utiliser print car logger n'est pas encore complètement configuré
+            print(f"[WARNING] Impossible de créer le fichier de log {LOG_FILE}: {exc}")
 logger.setLevel(logging.INFO)
 
 
@@ -205,23 +214,67 @@ class DgccrfScraper:
 
     @staticmethod
     def parse_conditionnement(text: str) -> Dict[str, Any]:
-        """Détecte formats du type '125g x 50', '6 x 1L', '3x500 ml'."""
+        """Détecte formats du type '125g x 50', '6 x 1L', '3x500 ml', '10lbs ou 4,54Kg x 10'.
+        
+        Gère aussi les formats avec livres (lbs) et les formats multiples.
+        """
         if not text:
             return {}
         t = text.lower().replace('×', 'x')
-        m = re.search(r"(\d+)\s*x\s*(\d+(?:[\.,]\d+)?)\s*(kg|g|mg|l|cl|ml|unite|pi[eè]ce)s?", t)
-        if m:
-            n = int(m.group(1))
-            qty = float(m.group(2).replace(',', '.'))
-            unit = m.group(3)
-            total = qty * n
-            return {'nombre_unites': n, 'quantite_unite': qty, 'unite': unit, 'quantite_totale': total}
-        # Single unit style
-        m2 = re.search(r"(\d+(?:[\.,]\d+)?)\s*(kg|g|mg|l|cl|ml)", t)
+        
+        # Si le texte contient "ou", prendre la partie après "ou" (format métrique)
+        if ' ou ' in t or 'ou ' in t:
+            parts = re.split(r'\s+ou\s+', t)
+            if len(parts) > 1:
+                t = parts[1]  # Prendre la partie après "ou"
+        
+        # Pattern pour formats avec multiplication: "125g x 50", "10lbs x 4", "4,54Kg x 10"
+        patterns = [
+            # Format: quantité unité x nombre (ex: "125g x 50", "4,54kg x 10")
+            r"(\d+(?:[\.,]\d+)?)\s*(kg|g|mg|l|cl|ml|lbs?)\s*x\s*(\d+)",
+            # Format: nombre x quantité unité (ex: "50 x 125g", "10 x 4,54kg")
+            r"(\d+)\s*x\s*(\d+(?:[\.,]\d+)?)\s*(kg|g|mg|l|cl|ml|lbs?|unite|pi[eè]ce)s?",
+        ]
+        
+        for pattern in patterns:
+            m = re.search(pattern, t)
+            if m:
+                groups = m.groups()
+                if len(groups) == 3:
+                    # Format: quantité unité x nombre
+                    if groups[1] in ['kg', 'g', 'mg', 'l', 'cl', 'ml', 'lbs', 'lb'] and groups[2].isdigit():
+                        qty = float(groups[0].replace(',', '.'))
+                        unit = groups[1]
+                        n = int(groups[2])
+                        # Convertir lbs en kg (1 lb = 0.453592 kg)
+                        if unit in ['lbs', 'lb']:
+                            qty = qty * 0.453592
+                            unit = 'kg'
+                        total = qty * n
+                        return {'nombre_unites': n, 'quantite_unite': qty, 'unite': unit, 'quantite_totale': total}
+                    # Format: nombre x quantité unité
+                    elif groups[0].isdigit() and groups[2] in ['kg', 'g', 'mg', 'l', 'cl', 'ml', 'lbs', 'lb', 'unite', 'piece', 'pieces']:
+                        n = int(groups[0])
+                        qty = float(groups[1].replace(',', '.'))
+                        unit = groups[2]
+                        # Convertir lbs en kg
+                        if unit in ['lbs', 'lb']:
+                            qty = qty * 0.453592
+                            unit = 'kg'
+                        total = qty * n
+                        return {'nombre_unites': n, 'quantite_unite': qty, 'unite': unit, 'quantite_totale': total}
+        
+        # Single unit style: "125g", "1L", "500ml", "10lbs"
+        m2 = re.search(r"(\d+(?:[\.,]\d+)?)\s*(kg|g|mg|l|cl|ml|lbs?)\b", t)
         if m2:
             qty = float(m2.group(1).replace(',', '.'))
             unit = m2.group(2)
+            # Convertir lbs en kg
+            if unit in ['lbs', 'lb']:
+                qty = qty * 0.453592
+                unit = 'kg'
             return {'nombre_unites': 1, 'quantite_unite': qty, 'unite': unit, 'quantite_totale': qty}
+        
         return {}
 
     @staticmethod
@@ -390,64 +443,475 @@ class DgccrfScraper:
             i += 1
 
     def iter_from_liste_produit_page(self, url: Optional[str] = None) -> Iterator[Dict[str, Any]]:
-        """Scrape la page 'echo-liste-produit' (ex: produits défiscalisés).
-
-        Heuristique:
-        - Récupère sections et points listés (liens, titres) comme entrées produits.
-        - Si la page contient des tableaux, extraire cellules.
+        """Scrape la page 'echo-liste-produit' (ex: produits défiscalisés) pour dgccrf.ga.
+        
+        Extraction précise et structurée :
+        - Métadonnées de la page (titre, en-tête, source)
+        - Catégories/Sections avec sélecteurs HTML précis
+        - Données produit : numéro, désignation, prix (gros, demi-gros, détail)
+        - Métadonnées additionnelles (navigation, footer, mentions)
         """
         target = url or LISTE_PRODUIT_URL
         resp = self._get_absolute(target)
         soup = BeautifulSoup(resp.text, 'html.parser')
+        state = self._load_state()
 
-        # Tenter d’extraire les tables
+        # Détection de changement
+        key = f"hash::{target}"
+        new_hash = self._hash_content(resp.text)
+        if state.get(key) == new_hash:
+            logger.info("Aucun changement détecté sur la page liste produits.")
+        state[key] = new_hash
+        self._save_state(state)
+        
+        # ============================================
+        # A. EXTRACTION DES MÉTADONNÉES GÉNÉRALES
+        # ============================================
+        page_metadata = {
+            'titre': '',
+            'en_tete': '',
+            'source': 'dgccrf.ga',
+            'url': target,
+            'date_extraction': datetime.now(timezone.utc).isoformat(),
+        }
+        
+        # Extraire le titre de la page
+        title_elem = soup.find('title')
+        if title_elem:
+            page_metadata['titre'] = self._clean_text(title_elem.get_text())
+        
+        # Extraire l'en-tête principal (h1, h2 avec "Echo des marchés" ou "LISTE DES")
+        for tag in ['h1', 'h2', 'h3']:
+            header = soup.find(tag, string=re.compile(r'Echo|LISTE|PRODUITS.*DÉFISCALISÉS', re.IGNORECASE))
+            if header:
+                page_metadata['en_tete'] = self._clean_text(header.get_text())
+                break
+        
+        # Si pas trouvé, chercher dans les strong/bold
+        if not page_metadata['en_tete']:
+            for strong in soup.find_all(['strong', 'b']):
+                text = self._clean_text(strong.get_text())
+                if re.search(r'Echo|LISTE.*PRODUITS|DÉFISCALISÉS', text, re.IGNORECASE):
+                    page_metadata['en_tete'] = text
+                    break
+        
+        logger.info(f"Page extraite: {page_metadata.get('en_tete', page_metadata.get('titre', 'N/A'))}")
+        
+        # Extraire les métadonnées additionnelles (footer, mentions légales)
+        footer_metadata = {}
+        footer = soup.find('footer') or soup.find('div', class_=re.compile(r'footer', re.I))
+        if footer:
+            footer_text = self._clean_text(footer.get_text())
+            # Extraire l'année de copyright
+            year_match = re.search(r'(\d{4})', footer_text)
+            if year_match:
+                footer_metadata['copyright_year'] = year_match.group(1)
+            footer_metadata['footer_text'] = footer_text[:500]  # Limiter la taille
+
+        def norm_header(h: str) -> str:
+            h = self._clean_text(h).lower()
+            h = h.replace('é', 'e').replace('è', 'e').replace('ê', 'e').replace('à', 'a').replace('î','i').replace('ï','i')
+            h = h.replace(' ', '_')
+            return h
+
+        def find_category_before_table(table_element) -> str:
+            """Trouve le titre de catégorie précédant un tableau.
+            
+            Analyse le HTML pour trouver les catégories, notamment les balises
+            qui pourraient être des catégories (balises G?, headings, strong, etc.)
+            """
+            # Liste des textes à ignorer (en-têtes de page, pas des catégories)
+            ignored_texts = {
+                'echo des marchés', 'echo des marches', 'liste des', 'produits défiscalisés',
+                'produits defiscalises', 'prix bloqués', 'prix bloques', 'dgccrf', 'gabon'
+            }
+            
+            def is_valid_category(text: str) -> bool:
+                """Vérifie si un texte est une catégorie valide."""
+                if not text or len(text) < 3:
+                    return False
+                # Ignorer les prix
+                if self._parse_price_fcfa(text):
+                    return False
+                # Ignorer les textes génériques
+                text_lower = text.lower().strip()
+                if any(ignored in text_lower for ignored in ignored_texts):
+                    return False
+                # Ignorer les numéros seuls
+                if text.strip().isdigit():
+                    return False
+                # Les catégories sont souvent en majuscules ou contiennent beaucoup de majuscules
+                # Mais pas toujours, donc on accepte aussi les textes normaux
+                return True
+            
+            # 1. Chercher dans les éléments précédents directs
+            current = table_element.previous_sibling
+            for _ in range(20):  # Augmenter la portée de recherche
+                if current is None:
+                    break
+                if hasattr(current, 'name') and current.name:
+                    # Chercher dans les headings
+                    if current.name in ('h1', 'h2', 'h3', 'h4', 'h5', 'h6'):
+                        text = self._clean_text(current.get_text())
+                        if is_valid_category(text):
+                            # Prioriser les textes en majuscules (catégories typiques)
+                            if text.isupper() or len([c for c in text if c.isupper()]) > len(text) * 0.6:
+                                return text
+                            # Sinon, retourner si c'est valide
+                            return text
+                    # Chercher dans strong/bold
+                    elif current.name in ('strong', 'b'):
+                        text = self._clean_text(current.get_text())
+                        if is_valid_category(text):
+                            # Prioriser les textes en majuscules
+                            if text.isupper() or len([c for c in text if c.isupper()]) > len(text) * 0.6:
+                                return text
+                            return text
+                    # Chercher dans les div, p, span avec des classes/id de catégorie
+                    elif hasattr(current, 'get'):
+                        # Chercher des balises avec des patterns comme "G1", "G2", "category", etc.
+                        class_attr = current.get('class', [])
+                        id_attr = current.get('id', '')
+                        if isinstance(class_attr, list):
+                            class_attr = ' '.join(class_attr)
+                        attr_str = (class_attr + ' ' + str(id_attr)).lower()
+                        # Détecter si c'est une balise de catégorie
+                        if any(keyword in attr_str 
+                               for keyword in ['category', 'categorie', 'g1', 'g2', 'g3', 'g4', 'g5', 'g-', 'g_', 'g0', 'g6', 'g7', 'g8', 'g9']):
+                            text = self._clean_text(current.get_text())
+                            if is_valid_category(text):
+                                return text
+                # Chercher aussi dans le parent et les éléments précédents
+                if hasattr(current, 'find_previous'):
+                    for tag in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'strong', 'b', 'div', 'p', 'span']:
+                        prev = current.find_previous(tag)
+                        if prev:
+                            text = self._clean_text(prev.get_text())
+                            if is_valid_category(text):
+                                # Prioriser les majuscules
+                                if text.isupper() or len([c for c in text if c.isupper()]) > len(text) * 0.6:
+                                    return text
+                                return text
+                    # Chercher des balises avec des classes/id de catégorie
+                    for selector in ['[class*="category"]', '[class*="categorie"]', '[id*="category"]', 
+                                     '[id*="categorie"]', '[class*="g1"]', '[class*="g2"]', '[class*="g3"]',
+                                     '[class*="g4"]', '[class*="g5"]', '[class*="g-"]', '[class*="g_"]',
+                                     '[class*="g0"]', '[id*="g1"]', '[id*="g2"]', '[id*="g3"]']:
+                        try:
+                            prev = current.find_previous(selector)
+                            if prev:
+                                text = self._clean_text(prev.get_text())
+                                if is_valid_category(text):
+                                    return text
+                        except Exception:
+                            continue
+                current = current.previous_sibling if hasattr(current, 'previous_sibling') else None
+            
+            # 2. Chercher dans le parent du tableau
+            parent = table_element.find_parent()
+            if parent:
+                # Chercher des headings dans le parent
+                for tag in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
+                    cat_elem = parent.find_previous(tag)
+                    if cat_elem:
+                        text = self._clean_text(cat_elem.get_text())
+                        if is_valid_category(text):
+                            # Prioriser les majuscules
+                            if text.isupper() or len([c for c in text if c.isupper()]) > len(text) * 0.6:
+                                return text
+                            return text
+                
+                # Chercher des balises avec des classes/id de catégorie dans le parent
+                for selector in ['[class*="category"]', '[class*="categorie"]', '[id*="category"]', 
+                                 '[id*="categorie"]', '[class*="g1"]', '[class*="g2"]', '[class*="g3"]',
+                                 '[class*="g4"]', '[class*="g5"]', '[class*="g-"]', '[class*="g_"]',
+                                 '[class*="g0"]', '[id*="g1"]', '[id*="g2"]', '[id*="g3"]', 'strong', 'b']:
+                    try:
+                        cat_elem = parent.find_previous(selector)
+                        if cat_elem:
+                            text = self._clean_text(cat_elem.get_text())
+                            if is_valid_category(text):
+                                return text
+                    except Exception:
+                        continue
+                
+                # Chercher dans tous les éléments précédents du parent
+                for elem in parent.find_all_previous(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'strong', 'b', 'div', 'p'], limit=10):
+                    text = self._clean_text(elem.get_text())
+                    if is_valid_category(text):
+                        # Vérifier si c'est proche du tableau (pas trop loin)
+                        next_table = elem.find_next('table')
+                        if next_table == table_element or (next_table and next_table.find_previous('table') == table_element):
+                            # Prioriser les majuscules
+                            if text.isupper() or len([c for c in text if c.isupper()]) > len(text) * 0.6:
+                                return text
+                            return text
+            
+            # 3. Chercher des balises avec des patterns spécifiques (G1, G2, etc.)
+            # Chercher dans tout le document avant le tableau
+            all_previous = table_element.find_all_previous(limit=30)
+            # Prioriser les éléments avec des classes/id de catégorie
+            category_candidates = []
+            for elem in all_previous:
+                if hasattr(elem, 'get'):
+                    class_attr = elem.get('class', [])
+                    id_attr = elem.get('id', '')
+                    if isinstance(class_attr, list):
+                        class_attr = ' '.join(class_attr)
+                    attr_str = (class_attr + ' ' + str(id_attr)).lower()
+                    
+                    # Détecter les patterns G1, G2, G3, etc. ou category
+                    if any(pattern in attr_str for pattern in ['g1', 'g2', 'g3', 'g4', 'g5', 'g0', 'g6', 'g7', 'g8', 'g9', 'category', 'categorie']):
+                        text = self._clean_text(elem.get_text())
+                        if is_valid_category(text):
+                            # Vérifier la proximité avec le tableau
+                            next_table = elem.find_next('table')
+                            if next_table == table_element:
+                                return text  # Retourner immédiatement si c'est la catégorie juste avant ce tableau
+                            category_candidates.append((text, elem))
+            
+            # Si on a des candidats, prendre le plus proche
+            if category_candidates:
+                # Trier par proximité (le dernier élément avant le tableau)
+                for text, elem in reversed(category_candidates):
+                    next_table = elem.find_next('table')
+                    if next_table == table_element:
+                        return text
+            
+            # 4. Dernière tentative : chercher tous les headings/strong en majuscules avant le tableau
+            for elem in table_element.find_all_previous(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'strong', 'b'], limit=15):
+                text = self._clean_text(elem.get_text())
+                if is_valid_category(text):
+                    # Prioriser fortement les textes en majuscules
+                    if text.isupper() or len([c for c in text if c.isupper()]) > len(text) * 0.7:
+                        next_table = elem.find_next('table')
+                        if next_table == table_element:
+                            return text
+            
+            return ''
+
+        # Analyser le HTML pour trouver toutes les balises de catégories (G1, G2, etc.)
+        def find_all_category_tags(soup_obj):
+            """Trouve toutes les balises qui pourraient être des catégories."""
+            categories_map = {}  # {element: category_name}
+            
+            # Liste des textes à ignorer (en-têtes de page, pas des catégories)
+            ignored_texts = {
+                'echo des marchés', 'echo des marches', 'liste des', 'produits défiscalisés',
+                'produits defiscalises', 'prix bloqués', 'prix bloques', 'dgccrf', 'gabon'
+            }
+            
+            def is_valid_category(text: str) -> bool:
+                """Vérifie si un texte est une catégorie valide."""
+                if not text or len(text) < 3:
+                    return False
+                # Ignorer les prix
+                if self._parse_price_fcfa(text):
+                    return False
+                # Ignorer les textes génériques
+                text_lower = text.lower().strip()
+                if any(ignored in text_lower for ignored in ignored_texts):
+                    return False
+                # Ignorer les numéros seuls
+                if text.strip().isdigit():
+                    return False
+                return True
+            
+            # Chercher toutes les balises avec des classes/id contenant des patterns de catégorie
+            import re
+            # Pattern pour G1, G2, G3, etc. ou category
+            pattern = re.compile(r'g\d+|g-|g_|category|categorie', re.IGNORECASE)
+            
+            # Chercher dans tous les éléments
+            for elem in soup_obj.find_all(True):  # True = tous les éléments
+                if not hasattr(elem, 'get'):
+                    continue
+                
+                class_attr = elem.get('class', [])
+                id_attr = elem.get('id', '')
+                if isinstance(class_attr, list):
+                    class_attr = ' '.join(class_attr)
+                
+                attr_str = (str(class_attr) + ' ' + str(id_attr)).lower()
+                
+                # Vérifier si cette balise correspond à un pattern de catégorie
+                if pattern.search(attr_str):
+                    text = self._clean_text(elem.get_text())
+                    if is_valid_category(text):
+                        # Stocker la catégorie avec l'élément comme clé
+                        categories_map[elem] = text
+                        logger.debug(f"Catégorie trouvée: '{text}' dans balise {elem.name} avec attributs {attr_str}")
+            
+            # Aussi chercher dans les headings/strong en majuscules qui pourraient être des catégories
+            for tag in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'strong', 'b']:
+                for elem in soup_obj.find_all(tag):
+                    text = self._clean_text(elem.get_text())
+                    if is_valid_category(text):
+                        # Prioriser les textes en majuscules
+                        if text.isupper() or len([c for c in text if c.isupper()]) > len(text) * 0.6:
+                            if elem not in categories_map:  # Ne pas écraser si déjà trouvé
+                                categories_map[elem] = text
+                                logger.debug(f"Catégorie trouvée (majuscules): '{text}' dans balise {elem.name}")
+            
+            return categories_map
+        
+        # Créer une carte des catégories
+        all_categories = find_all_category_tags(soup)
+        
+        # Tenter d'extraire les tables
         tables = soup.find_all('table')
         if tables:
-            def norm_header(h: str) -> str:
-                h = self._clean_text(h).lower()
-                h = h.replace('é', 'e').replace('è', 'e').replace('ê', 'e').replace('à', 'a').replace('î','i').replace('ï','i')
-                h = h.replace(' ', '_')
-                return h
-
             for tbl in tables:
+                # Trouver la catégorie pour ce tableau
+                category = find_category_before_table(tbl)
+                
+                # Si pas trouvé, chercher dans la carte des catégories
+                if not category and all_categories:
+                    # Chercher la catégorie la plus proche avant ce tableau
+                    best_category = None
+                    best_elem = None
+                    
+                    # Parcourir tous les éléments précédents du tableau
+                    for prev_elem in tbl.find_all_previous(True, limit=50):
+                        if prev_elem in all_categories:
+                            # Trouver le prochain tableau après cette catégorie
+                            next_table = prev_elem.find_next('table')
+                            if next_table == tbl or next_table is None:
+                                # Cette catégorie est la plus proche
+                                best_category = all_categories[prev_elem]
+                                best_elem = prev_elem
+                                break
+                    
+                    if best_category:
+                        category = best_category
+                        logger.debug(f"Catégorie trouvée via carte: '{category}' pour tableau")
+                    
+                    # Si toujours pas trouvé, chercher la dernière catégorie avant le tableau
+                    if not category:
+                        for cat_elem, cat_name in all_categories.items():
+                            # Vérifier si cette catégorie est avant le tableau
+                            next_table = cat_elem.find_next('table')
+                            if next_table == tbl:
+                                category = cat_name
+                                logger.debug(f"Catégorie trouvée (dernière avant tableau): '{category}'")
+                                break
+                
+                if not category:
+                    # Fallback: chercher dans les parents
+                    parent = tbl.find_parent()
+                    if parent:
+                        for tag in ['h2', 'h3', 'h4', 'strong', 'b']:
+                            cat_elem = parent.find_previous(tag)
+                            if cat_elem:
+                                cat_text = self._clean_text(cat_elem.get_text())
+                                # Utiliser la même validation
+                                text_lower = cat_text.lower().strip()
+                                ignored = {'echo des marchés', 'echo des marches', 'liste des', 
+                                          'produits défiscalisés', 'produits defiscalises', 
+                                          'prix bloqués', 'prix bloques', 'dgccrf', 'gabon'}
+                                if cat_text and len(cat_text) > 3 and not self._parse_price_fcfa(cat_text):
+                                    if not any(ign in text_lower for ign in ignored):
+                                        category = cat_text
+                                        break
+
                 headers_raw = [self._clean_text(th.get_text()) for th in tbl.find_all('th')]
                 headers = [norm_header(h) for h in headers_raw]
-                # Mapping étendu
+                
+                # Mapping étendu des en-têtes
                 header_map = {
                     'designation': ['designation','libelle','produit','desi','designations'],
                     'prix_detail': ['prix_detail','prix_detal','detail','prix_au_detail'],
                     'prix_gros': ['prix_gros','gros'],
                     'prix_demi_gros': ['prix_demi_gros','demi_gros','prix_demi'],
+                    'numero': ['n', 'numero', 'num', '#'],
                 }
-                # Remappe headers connus
+                
+                # Remapper les headers connus
                 remapped = {}
                 for idx, h in enumerate(headers):
                     key = h
-                    for target, aliases in header_map.items():
+                    for header_key, aliases in header_map.items():
                         if h in aliases:
-                            key = target
+                            key = header_key
                             break
                     remapped[idx] = key
+
+                # ============================================
+                # C. EXTRACTION DES DONNÉES PRODUIT
+                # ============================================
                 for tr in tbl.find_all('tr'):
                     tds = tr.find_all('td')
                     if not tds:
                         continue
+                    
+                    # Extraire toutes les cellules avec leur contenu nettoyé
                     cells = [self._clean_text(td.get_text()) for td in tr.find_all(['td', 'th'])]
                     if not cells or (len(cells) == 1 and not cells[0]):
                         continue
+                    
+                    # Ignorer les lignes qui sont des en-têtes répétés
+                    first_cell_lower = cells[0].lower().strip()
+                    if first_cell_lower in ['n', 'numero', 'num', '#', 'designation', 'prix', 'prix_gros', 'prix_demi_gros', 'prix_detail']:
+                        continue
+                    
+                    # Construire le dictionnaire de la ligne avec mapping précis
                     if headers and len(headers) == len(cells):
                         raw = dict(zip(range(len(headers)), cells))
                         row = {remapped[i]: v for i, v in raw.items()}
                     else:
+                        # Si pas de headers, utiliser la position des colonnes
                         row = {'cols': cells}
+                        # Essayer de deviner les colonnes basé sur le contenu
+                        if len(cells) >= 2:
+                            # Colonne 0 = numéro, Colonne 1 = désignation, etc.
+                            if cells[0].strip().isdigit():
+                                row['numero'] = cells[0]
+                                row['designation'] = cells[1] if len(cells) > 1 else ''
+                            else:
+                                row['designation'] = cells[0]
 
-                    # Reconnaître les entêtes spécifiques: DESIGNATION, PRIX_GROS, PRIX_DEMI_GROS, PRIX_DETAIL
-                    designation = row.get('designation') or row.get('libelle') or row.get('produit') or (cells[1] if len(cells) > 1 else (cells[0] if cells else None))
-                    origin_info = self.extract_origin_and_clean_name(designation or '')
+                    # 1. Extraire le NUMÉRO (colonne N)
+                    numero = row.get('numero') or row.get('num') or row.get('n')
+                    if not numero and len(cells) > 0:
+                        # Vérifier si la première colonne est un numéro
+                        if cells[0].strip().isdigit():
+                            numero = cells[0].strip()
+                    
+                    # 2. Extraire la DÉSIGNATION
+                    designation = row.get('designation') or row.get('libelle') or row.get('produit')
+                    if not designation:
+                        # Fallback: prendre la deuxième colonne si la première est un numéro
+                        if len(cells) > 1 and cells[0].strip().isdigit():
+                            designation = cells[1]
+                        elif len(cells) > 0:
+                            designation = cells[0]
+                    
+                    if not designation or not designation.strip():
+                        continue
+                    
+                    # Extraire origine et nettoyer le nom
+                    origin_info = self.extract_origin_and_clean_name(designation)
                     designation_clean = origin_info['nom'] or designation
+                    
+                    # 3. Extraire les PRIX (gros, demi-gros, détail)
                     prix_detail_txt = row.get('prix_detail') or row.get('prix_detal') or ''
                     prix_gros_txt = row.get('prix_gros') or ''
                     prix_demi_gros_txt = row.get('prix_demi_gros') or ''
+                    
+                    # Si les prix ne sont pas dans le mapping, chercher dans toutes les cellules
+                    if not prix_detail_txt and not prix_gros_txt and not prix_demi_gros_txt:
+                        # Chercher des prix dans toutes les cellules (format: "16 340 F CFA")
+                        for cell in cells:
+                            price_val = self._parse_price_fcfa(cell)
+                            if price_val:
+                                # Essayer de deviner le type de prix basé sur la position
+                                cell_idx = cells.index(cell)
+                                if cell_idx == len(cells) - 1:  # Dernière colonne = détail
+                                    prix_detail_txt = cell
+                                elif cell_idx == len(cells) - 2:  # Avant-dernière = demi-gros
+                                    prix_demi_gros_txt = cell
+                                elif cell_idx == len(cells) - 3:  # Troisième depuis la fin = gros
+                                    prix_gros_txt = cell
 
                     prix_detail_val = self._parse_price_fcfa(prix_detail_txt)
                     prix_gros_val = self._parse_price_fcfa(prix_gros_txt)
@@ -463,45 +927,82 @@ class DgccrfScraper:
                         prix_val = prix_demi_gros_val
                         type_prix = 'demi_gros'
 
-                    unit_detected = self._detect_unit(' '.join([designation_clean or '', ' '.join(cells)]))
-                    cond = self.parse_conditionnement(' '.join(cells))
+                    # Détecter l'unité et le conditionnement depuis la désignation
+                    full_text = ' '.join([designation_clean or '', ' '.join(cells)])
+                    unit_detected = self._detect_unit(full_text)
+                    cond = self.parse_conditionnement(full_text)
+                    
+                    # Extraire la marque depuis la désignation (mots en majuscules ou marques connues)
+                    marque = ''
+                    if designation_clean:
+                        # Chercher des mots en majuscules qui pourraient être des marques
+                        words = designation_clean.split()
+                        for word in words:
+                            if word.isupper() and len(word) > 2:
+                                marque = word
+                                break
+                    
+                    # Construire l'item avec toutes les métadonnées
                     item = {
+                        # Informations produit
                         'nom': designation_clean or 'Produit',
+                        'numero': numero or '',
                         'categorie': 'Produits défiscalisés',
-                        'sous_categorie': '',
+                        'sous_categorie': category or '',
                         'format': cond.get('quantite_totale') and f"{cond.get('quantite_totale')}{cond.get('unite')}" or '',
-                        'marque': '',
-                        # On alimente prix_unitaire avec fallback si besoin
+                        'marque': marque,
+                        
+                        # Prix
                         'prix_unitaire': prix_val,
-                        'unite': unit_detected,
+                        'unite': unit_detected or 'unite',
                         'prix_detail': prix_detail_val,
+                        'prix_gros': prix_gros_val,
+                        'prix_demi_gros': prix_demi_gros_val,
                         'prix_par_kilo': None,
+                        'type_prix': type_prix,
+                        'devise': 'FCFA',
+                        
+                        # Références
+                        'reference_titre': page_metadata.get('en_tete') or 'Produits défiscalisés',
+                        'reference_numero': numero or '',
+                        'reference_url': target,
+                        
+                        # Dates et périodes
                         'date_publication': None,
                         'periode_debut': None,
                         'periode_fin': None,
-                        'reference_titre': 'Produits défiscalisés',
-                        'reference_numero': '',
-                        'reference_url': target,
+                        
+                        # Autres
                         'description': ' | '.join(cells),
                         'zone': '',
-                        'devise': 'FCFA',
-                        'type_prix': type_prix,
+                        
+                        # Métadonnées de la page
+                        'page_metadata': {
+                            'titre': page_metadata.get('titre', ''),
+                            'en_tete': page_metadata.get('en_tete', ''),
+                            'source': page_metadata.get('source', 'dgccrf.ga'),
+                            'url': page_metadata.get('url', target),
+                            'date_extraction': page_metadata.get('date_extraction', ''),
+                        },
                     }
-                    # Ajouter valeurs de gros/demi-gros dans une clé extra si utile
-                    if prix_gros_val is not None or prix_demi_gros_val is not None:
-                        item['extra'] = {
-                            'prix_gros': prix_gros_val,
-                            'prix_demi_gros': prix_demi_gros_val,
-                            'origine': origin_info['origine'],
-                            'conditionnement': cond,
-                        }
+                    
+                    # Ajouter valeurs supplémentaires dans une clé extra
+                    item['extra'] = {
+                        'prix_gros': prix_gros_val,
+                        'prix_demi_gros': prix_demi_gros_val,
+                        'origine': origin_info['origine'],
+                        'conditionnement': cond,
+                        'footer_metadata': footer_metadata,
+                    }
+                    
                     # Open Food Facts (optionnel)
                     if OFF_ENABLE and designation_clean and len(designation_clean.split()) >= 2:
                         code = self._maybe_fetch_off_barcode(designation_clean)
                         if code:
                             item['code_barres'] = code
-                    # Ne retourner que les lignes avec une désignation
-                    if item['nom']:
+                    
+                    # Ne retourner que les lignes avec une désignation valide
+                    if item['nom'] and item['nom'].strip():
                         # Item-level diff
                         if SKIP_UNCHANGED:
                             it_hash = self._hash_item(item)
@@ -841,29 +1342,81 @@ class DgccrfScraper:
             nom = (it.get('nom') or '').strip()
             if not nom:
                 continue
+            
+            # Validation: s'assurer que les catégories ne sont pas des prix
+            def is_price_value(text: str) -> bool:
+                """Vérifie si un texte est un prix ou une valeur numérique.
+                
+                Une catégorie ne doit pas être un prix. On vérifie si le texte
+                est principalement composé de chiffres et ressemble à un montant.
+                """
+                if not text:
+                    return False
+                
+                # Si le texte contient des lettres significatives, ce n'est probablement pas un prix
+                # (ex: "VIANDE DE PORC" contient des lettres)
+                letters = sum(1 for c in text if c.isalpha())
+                digits = sum(1 for c in text if c.isdigit())
+                
+                # Si plus de lettres que de chiffres, ce n'est pas un prix
+                if letters > digits:
+                    return False
+                
+                # Nettoyer le texte (retirer FCFA, espaces, etc.)
+                cleaned = text.replace('FCFA', '').replace('CFA', '').replace('F', '').strip()
+                cleaned = cleaned.replace(' ', '').replace(',', '.').replace('\xa0', '')
+                # Garder seulement un point décimal
+                if cleaned.count('.') > 1:
+                    # Garder le premier point, retirer les autres
+                    parts = cleaned.split('.')
+                    cleaned = parts[0] + '.' + ''.join(parts[1:])
+                
+                # Vérifier si c'est principalement un nombre
+                if not cleaned or not cleaned.replace('.', '').isdigit():
+                    return False
+                
+                try:
+                    val = float(cleaned)
+                    # Si c'est un nombre raisonnable pour un prix (> 0 et < 10 millions FCFA)
+                    # et qu'il n'y a pas beaucoup de lettres
+                    return 0 < val < 10000000 and digits >= 3
+                except ValueError:
+                    return False
+            
             cat_nom = (it.get('categorie') or 'Non classé').strip() or 'Non classé'
+            # Ne pas créer de catégorie si le nom est un prix
+            if is_price_value(cat_nom):
+                logger.warning(f"Nom de catégorie ignoré (ressemble à un prix): '{cat_nom}' pour produit '{nom}'")
+                cat_nom = 'Non classé'
+            
             cat_slug = slugify(cat_nom)[:100] or 'non-classe'
             categorie, _ = Categorie.objects.get_or_create(slug=cat_slug, defaults={'nom': cat_nom})
+            
             # Sous-catégorie hiérarchique (optionnelle)
             sous_cat_nom = (it.get('sous_categorie') or '').strip()
             sous_cat_obj = None
             if sous_cat_nom:
-                sous_slug = slugify(sous_cat_nom)[:100] or None
-                if sous_slug:
-                    try:
-                        sous_cat_obj, _ = Categorie.objects.get_or_create(
-                            slug=sous_slug,
-                            defaults={'nom': sous_cat_nom, 'parent': categorie}
-                        )
-                        # Si la sous-catégorie existe déjà mais sans parent, essayer de définir le parent si absent
-                        if getattr(sous_cat_obj, 'parent_id', None) in (None, 0) and sous_cat_obj.parent_id != categorie.id:
-                            sous_cat_obj.parent = categorie
-                            try:
-                                sous_cat_obj.save(update_fields=['parent'])
-                            except Exception:
-                                pass
-                    except Exception:
-                        sous_cat_obj = None
+                # Ne pas créer de sous-catégorie si le nom est un prix
+                if is_price_value(sous_cat_nom):
+                    logger.warning(f"Nom de sous-catégorie ignoré (ressemble à un prix): '{sous_cat_nom}' pour produit '{nom}'")
+                    sous_cat_nom = ''
+                else:
+                    sous_slug = slugify(sous_cat_nom)[:100] or None
+                    if sous_slug:
+                        try:
+                            sous_cat_obj, _ = Categorie.objects.get_or_create(
+                                slug=sous_slug,
+                                defaults={'nom': sous_cat_nom, 'parent': categorie}
+                            )
+                            # Si la sous-catégorie existe déjà mais sans parent, essayer de définir le parent si absent
+                            if getattr(sous_cat_obj, 'parent_id', None) in (None, 0) and sous_cat_obj.parent_id != categorie.id:
+                                sous_cat_obj.parent = categorie
+                                try:
+                                    sous_cat_obj.save(update_fields=['parent'])
+                                except Exception:
+                                    pass
+                        except Exception:
+                            sous_cat_obj = None
 
             code_barre = (it.get('code_barres') or it.get('code_barre') or '').strip() or None
             unit_txt = (it.get('unite') or '').strip().lower()
@@ -994,10 +1547,24 @@ class DgccrfScraper:
 
             # Référentiels Prix Homologués (si champs présents)
             ref_titre = (it.get('reference_titre') or '').strip()
-            ref_num = (it.get('reference_numero') or '').strip()
+            # Utiliser numero si disponible, sinon reference_numero
+            ref_num = (it.get('numero') or it.get('reference_numero') or '').strip()
             ref_url = (it.get('reference_url') or '').strip()
-            # On crée un HomologationProduit quand l'item provient du flux "prix homologués" ou contient des métadonnées de référence
-            if ref_titre or 'prix_homolog' in (ref_titre or '').lower() or it.get('prix_libreville') is not None or it.get('prix_province') is not None:
+            # On crée un HomologationProduit quand l'item provient du flux "prix homologués", "produits défiscalisés" ou contient des métadonnées de référence
+            is_homologue = ref_titre and (
+                'prix_homolog' in ref_titre.lower() or 
+                'produits défiscalisés' in ref_titre or 
+                'defiscalise' in ref_titre.lower()
+            )
+            has_prix_zones = it.get('prix_libreville') is not None or it.get('prix_province') is not None
+            # Vérifier les prix gros/demi-gros directement dans l'item ou dans extra
+            has_extra_prix = (
+                it.get('prix_gros') is not None or 
+                it.get('prix_demi_gros') is not None or
+                (it.get('extra') or {}).get('prix_gros') is not None or 
+                (it.get('extra') or {}).get('prix_demi_gros') is not None
+            )
+            if is_homologue or has_prix_zones or has_extra_prix or ref_titre:
                 hp_defaults = {
                     'format': (it.get('format') or '').strip(),
                     'marque': (it.get('marque') or '').strip(),
@@ -1033,8 +1600,8 @@ class DgccrfScraper:
                             prix_unitaire=it.get('prix_libreville'),
                             prix_detail=it.get('prix_detail') if it.get('prix_detail') is not None else None,
                             prix_par_kilo=it.get('prix_par_kilo') if it.get('prix_par_kilo') is not None else None,
-                            prix_gros=(it.get('extra') or {}).get('prix_gros'),
-                            prix_demi_gros=(it.get('extra') or {}).get('prix_demi_gros'),
+                            prix_gros=it.get('prix_gros') or (it.get('extra') or {}).get('prix_gros'),
+                            prix_demi_gros=it.get('prix_demi_gros') or (it.get('extra') or {}).get('prix_demi_gros'),
                             localisation='Libreville',
                             source='DGCCRF',
                         )
@@ -1047,12 +1614,13 @@ class DgccrfScraper:
                             prix_unitaire=it.get('prix_province'),
                             prix_detail=it.get('prix_detail') if it.get('prix_detail') is not None else None,
                             prix_par_kilo=it.get('prix_par_kilo') if it.get('prix_par_kilo') is not None else None,
-                            prix_gros=(it.get('extra') or {}).get('prix_gros'),
-                            prix_demi_gros=(it.get('extra') or {}).get('prix_demi_gros'),
+                            prix_gros=it.get('prix_gros') or (it.get('extra') or {}).get('prix_gros'),
+                            prix_demi_gros=it.get('prix_demi_gros') or (it.get('extra') or {}).get('prix_demi_gros'),
                             localisation='Province',
                             source='DGCCRF',
                         )
                     # Fallback: si pas de LB/Province dédiés mais une zone générique et un prix
+                    # Pour les produits défiscalisés, créer toujours un PrixHomologue avec les prix disponibles
                     if it.get('prix_libreville') is None and it.get('prix_province') is None:
                         val = it.get('prix_unitaire') or it.get('prix_detail')
                         if val is not None:
@@ -1063,9 +1631,9 @@ class DgccrfScraper:
                                 prix_unitaire=val,
                                 prix_detail=it.get('prix_detail') if it.get('prix_detail') is not None else None,
                                 prix_par_kilo=it.get('prix_par_kilo') if it.get('prix_par_kilo') is not None else None,
-                                prix_gros=(it.get('extra') or {}).get('prix_gros'),
-                                prix_demi_gros=(it.get('extra') or {}).get('prix_demi_gros'),
-                                localisation=(it.get('zone') or '').strip(),
+                                prix_gros=it.get('prix_gros') or (it.get('extra') or {}).get('prix_gros'),
+                                prix_demi_gros=it.get('prix_demi_gros') or (it.get('extra') or {}).get('prix_demi_gros'),
+                                localisation=(it.get('zone') or '').strip() or 'Gabon',
                                 source='DGCCRF',
                             )
                 except Exception:

@@ -82,7 +82,13 @@ class ConnexionSerializer(serializers.Serializer):
     
     def validate(self, attrs):
         # Supporter: identifiant | username | email
-        identifiant = attrs.get('identifiant') or attrs.get('username') or attrs.get('email')
+        identifiant = (
+            attrs.get('identifiant')
+            or attrs.get('username')
+            or attrs.get('email')
+            or ''
+        )
+        identifiant = str(identifiant).strip()
         password = attrs.get('password')
         
         if identifiant and password:

@@ -5,6 +5,8 @@ from datetime import datetime, time
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework.status import HTTP_200_OK
+from rest_framework.views import APIView
+from rest_framework.permissions import AllowAny
 from apps.produits.models import Produit
 from apps.produits.models import Prix
 from apps.magasins.models import Magasin
@@ -21,6 +23,20 @@ import hashlib
 
 def health(_request):
     return JsonResponse({"status": "ok"})
+
+
+class TestConnectionView(APIView):
+    permission_classes = [AllowAny]
+    
+    def get(self, request):
+        return Response({
+            'status': 'success',
+            'message': 'Connexion API réussie!',
+            'data': {
+                'user': str(request.user) if request.user.is_authenticated else 'Non authentifié',
+                'timestamp': datetime.now().isoformat()
+            }
+        })
 
 
 @api_view(["GET"])

@@ -221,16 +221,20 @@ class ProduitListSerializer(serializers.ModelSerializer):
     """Serializer pour la liste des produits (optimisé)"""
     categorie_nom = serializers.CharField(source='categorie.nom', read_only=True)
     marque_nom = serializers.CharField(source='marque.nom', read_only=True, allow_null=True)
+    # Utiliser les annotations du queryset (prix_moyen_agg, prix_min_agg, etc.)
     prix_moyen = serializers.DecimalField(
+        source='prix_moyen_agg',
         max_digits=8, decimal_places=2, read_only=True, allow_null=True
     )
     prix_min = serializers.DecimalField(
+        source='prix_min_agg',
         max_digits=8, decimal_places=2, read_only=True, allow_null=True
     )
     prix_max = serializers.DecimalField(
+        source='prix_max_agg',
         max_digits=8, decimal_places=2, read_only=True, allow_null=True
     )
-    nombre_magasins = serializers.IntegerField(read_only=True)
+    nombre_magasins = serializers.IntegerField(source='nombre_magasins_agg', read_only=True)
     
     class Meta:
         model = Produit
@@ -246,16 +250,11 @@ class ProduitDetailSerializer(serializers.ModelSerializer):
     categorie = CategorieSerializer(read_only=True)
     marque = MarqueSerializer(read_only=True)
     unite_mesure = UniteMesureSerializer(read_only=True)
-    prix_moyen = serializers.DecimalField(
-        max_digits=8, decimal_places=2, read_only=True, allow_null=True
-    )
-    prix_min = serializers.DecimalField(
-        max_digits=8, decimal_places=2, read_only=True, allow_null=True
-    )
-    prix_max = serializers.DecimalField(
-        max_digits=8, decimal_places=2, read_only=True, allow_null=True
-    )
-    nombre_magasins = serializers.IntegerField(read_only=True)
+    # Utiliser les propriétés du modèle ou les annotations si disponibles
+    prix_moyen = serializers.SerializerMethodField()
+    prix_min = serializers.SerializerMethodField()
+    prix_max = serializers.SerializerMethodField()
+    nombre_magasins = serializers.SerializerMethodField()
     note_moyenne = serializers.SerializerMethodField()
     nombre_avis = serializers.SerializerMethodField()
     caracteristiques = serializers.SerializerMethodField()
@@ -272,6 +271,30 @@ class ProduitDetailSerializer(serializers.ModelSerializer):
             'date_creation', 'date_modification'
         ]
         read_only_fields = ['date_creation', 'date_modification']
+    
+    def get_prix_moyen(self, obj):
+        """Récupère le prix moyen depuis l'annotation ou la propriété"""
+        if hasattr(obj, 'prix_moyen_agg'):
+            return float(obj.prix_moyen_agg) if obj.prix_moyen_agg else None
+        return float(obj.prix_moyen) if obj.prix_moyen else None
+    
+    def get_prix_min(self, obj):
+        """Récupère le prix minimum depuis l'annotation ou la propriété"""
+        if hasattr(obj, 'prix_min_agg'):
+            return float(obj.prix_min_agg) if obj.prix_min_agg else None
+        return float(obj.prix_min) if obj.prix_min else None
+    
+    def get_prix_max(self, obj):
+        """Récupère le prix maximum depuis l'annotation ou la propriété"""
+        if hasattr(obj, 'prix_max_agg'):
+            return float(obj.prix_max_agg) if obj.prix_max_agg else None
+        return float(obj.prix_max) if obj.prix_max else None
+    
+    def get_nombre_magasins(self, obj):
+        """Récupère le nombre de magasins depuis l'annotation ou la propriété"""
+        if hasattr(obj, 'nombre_magasins_agg'):
+            return obj.nombre_magasins_agg or 0
+        return obj.nombre_magasins or 0
     
     def get_note_moyenne(self, obj):
         from django.db.models import Avg
@@ -351,6 +374,47 @@ class HistoriquePrixProduitSerializer(serializers.ModelSerializer):
     class Meta:
         model = HistoriquePrixProduit
         fields = ['id', 'produit', 'date', 'prix_moyen', 'prix_min', 'prix_max', 'nombre_magasins']
+
+
+class BatchPrixRequestSerializer(serializers.Serializer):
+    """Serializer pour les requêtes batch de prix"""
+    produit_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        min_length=1,
+        max_length=100,
+        help_text="Liste des IDs de produits (max 100)"
+    )
+    magasin_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=False,
+        allow_empty=True,
+        help_text="Liste des IDs de magasins (optionnel)"
+    )
+    include_stats = serializers.BooleanField(
+        default=True,
+        help_text="Inclure les statistiques de prix pour chaque produit"
+    )
+    filters = serializers.DictField(
+        required=False,
+        allow_empty=True,
+        help_text="Filtres additionnels (est_promotion, rayon_km, etc.)"
+    )
+
+
+class BatchPrixResponseSerializer(serializers.Serializer):
+    """Serializer pour les réponses batch de prix"""
+    produit_id = serializers.IntegerField()
+    magasin_id = serializers.IntegerField(allow_null=True)
+    prix_id = serializers.IntegerField(allow_null=True)
+    prix_actuel = serializers.DecimalField(max_digits=8, decimal_places=2, allow_null=True)
+    prix_origine = serializers.DecimalField(max_digits=8, decimal_places=2, allow_null=True)
+    est_promotion = serializers.BooleanField()
+    pourcentage_promotion = serializers.DecimalField(max_digits=5, decimal_places=2, allow_null=True)
+    devise = serializers.CharField()
+    disponible = serializers.BooleanField()
+    stats = serializers.DictField(required=False, allow_null=True)
+    produit_nom = serializers.CharField(allow_null=True)
+    magasin_nom = serializers.CharField(allow_null=True)
 
 
 class PrixSerializer(serializers.ModelSerializer):

@@ -30,6 +30,7 @@ import io
 import base64
 import qrcode
 from django.utils.dateparse import parse_datetime
+import ipaddress
 
 from .models import Utilisateur, ProfilUtilisateur, Abonnement, HistoriqueConnexion, HistoriqueRemises
 from .utils import generer_token_activation, verifier_token_activation, generer_token_reset, verifier_token_reset
@@ -48,7 +49,7 @@ from django.contrib.auth.models import Group
 from django.contrib.auth import authenticate, login
 from django.contrib.auth import login as django_login
 from django_otp.plugins.otp_totp.models import TOTPDevice
-from django_otp import devices_for_user
+from django_otp import devices_for_user, login as otp_login
 
 class UtilisateurViewSet(viewsets.ModelViewSet):
     """ViewSet pour la gestion des utilisateurs avec système de fidélité"""
@@ -426,10 +427,6 @@ class RegisterView(APIView):
         s = InscriptionSerializer(data=request.data)
         s.is_valid(raise_exception=True)
         user = s.save()
-        # Rendre inactif jusqu'à activation
-        if user.is_active:
-            user.is_active = False
-            user.save(update_fields=["is_active"])
         # Générer uid/token et envoyer email d'activation
         try:
             uidb64, token = make_activation_uid_token(user)
@@ -438,7 +435,22 @@ class RegisterView(APIView):
                 send_activation_email_uid.delay(user.email, activation_url)
         except Exception:
             pass
-        return Response({"detail": "Compte créé. Vérifiez votre email pour activer le compte."}, status=201)
+        user_payload = UtilisateurSerializer(user).data
+        response_payload = {'user': user_payload}
+        if getattr(settings, 'USE_JWT_AUTH', False) and HAS_JWT and RefreshToken is not None:
+            refresh = RefreshToken.for_user(user)
+            response_payload.update({
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+            })
+        else:
+            try:
+                django_login(request, user)
+            except Exception:
+                pass
+        if not getattr(user, 'est_verifie', False):
+            response_payload['activation_pending'] = True
+        return Response(response_payload, status=status.HTTP_201_CREATED)
 
 
 class ActivateView(APIView):
@@ -491,15 +503,70 @@ class LoginView(APIView):
     throttle_classes = [AnonRateThrottle]
     throttle_scope = 'login'
 
+    def _extract_client_ip(self, request):
+        forwarded = request.META.get('HTTP_X_FORWARDED_FOR')
+        if forwarded:
+            candidate = forwarded.split(',')[0].strip()
+        else:
+            candidate = request.META.get('REMOTE_ADDR', '') or ''
+        try:
+            return str(ipaddress.ip_address(candidate))
+        except Exception:
+            return '0.0.0.0'
+
+    def _log_connexion(self, user, request, success: bool):
+        try:
+            HistoriqueConnexion.objects.create(
+                utilisateur=user,
+                ip_address=self._extract_client_ip(request),
+                user_agent=request.META.get('HTTP_USER_AGENT', '') or '',
+                reussi=success,
+            )
+        except Exception:
+            # Ne pas casser le flux d'auth si la journalisation échoue
+            pass
+
     def post(self, request):
         s = ConnexionSerializer(data=request.data, context={"request": request})
         s.is_valid(raise_exception=True)
         user = s.validated_data['user']
+        otp_token = (
+            request.data.get('otp')
+            or request.data.get('otp_token')
+            or request.data.get('code_otp')
+            or request.data.get('code')
+        )
+        preferences = dict(getattr(user, 'preferences', {}) or {})
+        pref_flag = preferences.get('twofa_required')
+        confirmed_devices = list(devices_for_user(user, confirmed=True))
+        otp_required = pref_flag if isinstance(pref_flag, bool) else bool(confirmed_devices)
+
+        if otp_required:
+            if not otp_token:
+                return Response({'otp_required': True}, status=status.HTTP_202_ACCEPTED)
+            verified_device = None
+            for device in confirmed_devices:
+                try:
+                    if device.verify_token(otp_token):
+                        verified_device = device
+                        try:
+                            otp_login(request, device)
+                        except Exception:
+                            pass
+                        break
+                except Exception:
+                    continue
+            if not verified_device:
+                self._log_connexion(user, request, success=False)
+                return Response({'detail': _('Code OTP invalide.')}, status=status.HTTP_400_BAD_REQUEST)
+
+        self._log_connexion(user, request, success=True)
+        user_payload = UtilisateurSerializer(user).data
         # JWT si activé
         if getattr(settings, 'USE_JWT_AUTH', False) and HAS_JWT and RefreshToken is not None:
             refresh = RefreshToken.for_user(user)
             return Response({
-                'utilisateur': {'id': user.id, 'username': user.username, 'email': user.email},
+                'user': user_payload,
                 'refresh': str(refresh),
                 'access': str(refresh.access_token),
             })
@@ -508,7 +575,7 @@ class LoginView(APIView):
             django_login(request, user)
         except Exception:
             pass
-        return Response({'utilisateur': {'id': user.id, 'username': user.username, 'email': user.email}})
+        return Response({'user': user_payload})
 
 from rest_framework.decorators import api_view, permission_classes  # noqa: E402
 from django.contrib.sessions.models import Session  # noqa: E402
@@ -519,45 +586,6 @@ try:
 except Exception:
     OutstandingToken = None
     BlacklistedToken = None
-
-@api_view(["GET"]) 
-@permission_classes([permissions.AllowAny])
-def activer_compte(request, token: str):
-    """Active le compte via un token signé envoyé par email."""
-    data = verifier_token_activation(token)
-    if not data:
-        return Response({'detail': 'Token invalide ou expiré.'}, status=status.HTTP_400_BAD_REQUEST)
-    try:
-        utilisateur = Utilisateur.objects.get(id=data['uid'], email=data['email'])
-    except Utilisateur.DoesNotExist:
-        return Response({'detail': 'Utilisateur introuvable.'}, status=status.HTTP_404_NOT_FOUND)
-    if utilisateur.est_verifie and utilisateur.is_active:
-        return Response({'detail': 'Compte déjà activé.'})
-    utilisateur.est_verifie = True
-    utilisateur.is_active = True
-    utilisateur.save(update_fields=['est_verifie', 'is_active'])
-    return Response({'detail': 'Compte activé avec succès.'})
-
-@api_view(["GET"]) 
-@permission_classes([permissions.AllowAny])
-def activer_compte_query(request):
-    """Variante qui accepte le token en query param: /api/auth/activation/confirmer?token=..."""
-    token = request.query_params.get('token') or request.GET.get('token')
-    if not token:
-        return Response({'detail': 'Paramètre token requis.'}, status=status.HTTP_400_BAD_REQUEST)
-    data = verifier_token_activation(token)
-    if not data:
-        return Response({'detail': 'Token invalide ou expiré.'}, status=status.HTTP_400_BAD_REQUEST)
-    try:
-        utilisateur = Utilisateur.objects.get(id=data['uid'], email=data['email'])
-    except Utilisateur.DoesNotExist:
-        return Response({'detail': 'Utilisateur introuvable.'}, status=status.HTTP_404_NOT_FOUND)
-    if utilisateur.est_verifie and utilisateur.is_active:
-        return Response({'detail': 'Compte déjà activé.'})
-    utilisateur.est_verifie = True
-    utilisateur.is_active = True
-    utilisateur.save(update_fields=['est_verifie', 'is_active'])
-    return Response({'detail': 'Compte activé avec succès.'})
 
 def web_activate_page(request, token: str):
     """Page d'atterrissage web pour Universal/App Links: /activate/<token>
@@ -722,7 +750,7 @@ def google_login(request):
         except Exception:
             pass
         # Générer les tokens JWT si dispo
-        payload = {'utilisateur': UtilisateurSerializer(user).data}
+        payload = {'user': UtilisateurSerializer(user).data}
         if HAS_JWT and RefreshToken is not None:
             refresh = RefreshToken.for_user(user)
             payload.update({'refresh': str(refresh), 'access': str(refresh.access_token)})
@@ -781,7 +809,7 @@ def facebook_login(request):
             user.est_verifie = True; updates.append('est_verifie')
         if updates:
             user.save(update_fields=updates)
-        payload = {'utilisateur': UtilisateurSerializer(user).data}
+        payload = {'user': UtilisateurSerializer(user).data}
         if HAS_JWT and RefreshToken is not None:
             refresh = RefreshToken.for_user(user)
             payload.update({'refresh': str(refresh), 'access': str(refresh.access_token)})
@@ -835,7 +863,7 @@ def apple_login(request):
             user.est_verifie = True; updates.append('est_verifie')
         if updates:
             user.save(update_fields=updates)
-        payload = {'utilisateur': UtilisateurSerializer(user).data}
+        payload = {'user': UtilisateurSerializer(user).data}
         if HAS_JWT and RefreshToken is not None:
             refresh = RefreshToken.for_user(user)
             payload.update({'refresh': str(refresh), 'access': str(refresh.access_token)})

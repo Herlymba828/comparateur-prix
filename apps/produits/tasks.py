@@ -6,7 +6,6 @@ from django.utils import timezone
 from decimal import Decimal
 import os
 import sys
-import subprocess
 from pathlib import Path
 import json
 import logging
@@ -123,50 +122,87 @@ def import_homologations_task(limit: int | None = None, since_date: str | None =
     return 0
 
 
-@shared_task(name="dgccrf_scrape_report_task")
-def dgccrf_scrape_report_task(limit: int | None = None,
+@shared_task(name="dgccrf_scrape_report_task", bind=True, max_retries=3)
+def dgccrf_scrape_report_task(self, limit: int | None = None,
                               unified: bool = True,
                               save: bool = True,
                               only_changed: bool = True,
                               csv_out: str | None = None,
                               sql_out: str | None = None,
-                              report_out: str | None = None) -> int:
-    """Exécute le scraper DGCCRF via le script Python avec options d'export et de persistance.
-    Utilise les variables d'environnement si les arguments ne sont pas fournis.
+                              report_out: str | None = None,
+                              sources: list[str] | None = None) -> dict:
+    """Tâche Celery pour le scraping DGCCRF.
+    
+    Utilise directement le scraper Python au lieu de subprocess pour une meilleure intégration.
+    Retourne un dictionnaire avec les statistiques de l'extraction.
     """
-    base_dir = Path(getattr(settings, 'BASE_DIR', Path(__file__).resolve().parents[3]))
-    script_path = base_dir / 'scripts' / 'scraper_dgccrf.py'
-    if not script_path.exists():
-        return 1
-
-    args = [sys.executable, str(script_path)]
-    if limit is not None:
-        args += ['--limit', str(limit)]
-    if unified:
-        args.append('--unified')
-    if save:
-        args.append('--save')
-    if only_changed:
-        args.append('--only-changed')
-    if csv_out:
-        args += ['--csv', csv_out]
-    if sql_out:
-        args += ['--sql', sql_out]
-    if report_out:
-        args += ['--report', report_out]
-
-    env = os.environ.copy()
-    # Respecter les réglages DGCCRF_* existants
+    logger = logging.getLogger(__name__)
+    logger.info(f"Début du scraping DGCCRF (limit={limit}, save={save}, only_changed={only_changed})")
+    
     try:
-        completed = subprocess.run(args, env=env, capture_output=True, text=True, timeout=3600)
-        if completed.returncode != 0:
-            # Log minimal en cas d'échec
-            print(completed.stdout)
-            print(completed.stderr)
-            return completed.returncode
-        return 0
-    except Exception:
-        return 1
+        # Importer le scraper directement
+        import sys
+        base_dir = Path(getattr(settings, 'BASE_DIR', Path(__file__).resolve().parents[2]))
+        if str(base_dir) not in sys.path:
+            sys.path.insert(0, str(base_dir))
+        
+        # Import du scraper depuis scripts/
+        import importlib.util
+        scraper_path = base_dir / 'scripts' / 'scraper_dgccrf.py'
+        spec = importlib.util.spec_from_file_location("scraper_dgccrf", scraper_path)
+        scraper_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(scraper_module)
+        run_scrape = scraper_module.run_scrape
+        
+        # Préparer les chemins de sortie
+        data_dir = base_dir / 'data'
+        data_dir.mkdir(exist_ok=True)
+        
+        csv_path = csv_out or (data_dir / 'dgccrf_daily.csv')
+        sql_path = sql_out or (data_dir / 'dgccrf_daily.sql')
+        report_path = report_out or (data_dir / 'dgccrf_daily_report.json')
+        
+        # Exécuter le scraping
+        result = run_scrape(
+            out=None,  # Pas de JSON de sortie par défaut
+            limit=limit,
+            sources=sources or ['liste_produit'],
+            save=save,
+            unified=unified,
+            csv_out=str(csv_path) if csv_out or not only_changed else None,
+            sql_out=str(sql_path) if sql_out or not only_changed else None,
+            report_out=str(report_path),
+            only_changed=only_changed,
+        )
+        
+        # Lire le rapport pour retourner les statistiques
+        stats = {
+            'success': True,
+            'result_code': result,
+            'report_path': str(report_path),
+        }
+        
+        try:
+            if report_path.exists():
+                report_data = json.loads(report_path.read_text(encoding='utf-8'))
+                stats.update({
+                    'total_items': report_data.get('total_items', 0),
+                    'source_counts': report_data.get('source_counts', {}),
+                    'saved_products': report_data.get('saved_products', 0),
+                    'saved_prices': report_data.get('saved_prices', 0),
+                    'duration_sec': report_data.get('duration_sec', 0),
+                    'timestamp': report_data.get('timestamp', ''),
+                })
+        except Exception as e:
+            logger.warning(f"Impossible de lire le rapport: {e}")
+        
+        logger.info(f"Scraping DGCCRF terminé: {stats.get('total_items', 0)} items extraits")
+        return stats
+        
+    except Exception as exc:
+        logger.error(f"Erreur lors du scraping DGCCRF: {exc}", exc_info=True)
+        # Retry avec backoff exponentiel
+        raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))
 
 
 @shared_task(name="monitor_dgccrf_report_task")

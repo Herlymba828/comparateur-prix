@@ -13,6 +13,7 @@ import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import os
+from pathlib import Path
 from django.conf import settings
 from django.core.cache import cache
 from django.db.models import Count
@@ -295,6 +296,32 @@ class ModelePredictionPrix:
         X_scaled = self.scalers['X'].transform(X)
         y_log = float(self.meilleur_modele.predict(X_scaled)[0])
         return float(np.expm1(y_log))
+    
+    def sauvegarder(self, chemin: str):
+        """Sauvegarde le modèle entraîné"""
+        if not self.est_entraine:
+            raise ValueError("Modèle non entraîné")
+        
+        modele_data = {
+            'meilleur_modele': self.meilleur_modele,
+            'encodeurs': self.encodeurs,
+            'scalers': self.scalers,
+            'caracteristiques': self.caracteristiques,
+        }
+        
+        joblib.dump(modele_data, chemin)
+        logger.info(f"Modèle de prix sauvegardé: {chemin}")
+    
+    def charger(self, chemin: str):
+        """Charge un modèle pré-entraîné"""
+        if os.path.exists(chemin):
+            modele_data = joblib.load(chemin)
+            self.meilleur_modele = modele_data['meilleur_modele']
+            self.encodeurs = modele_data['encodeurs']
+            self.scalers = modele_data['scalers']
+            self.caracteristiques = modele_data['caracteristiques']
+            self.est_entraine = True
+            logger.info(f"Modèle de prix chargé: {chemin}")
 
 class GestionnaireRecommandations:
     """Gestionnaire principal des recommandations"""
@@ -304,82 +331,133 @@ class GestionnaireRecommandations:
         self.modele_prix = ModelePredictionPrix()
         self.est_initialise = False
     
-    def initialiser_modeles(self):
-        """Initialise les modèles avec les données de la base"""
+    def initialiser_modeles(self, force_retrain: bool = False):
+        """Initialise les modèles avec les données de la base.
+        
+        Essaie d'abord de charger les modèles sauvegardés depuis le disque.
+        Si les modèles n'existent pas ou sont obsolètes, les réentraîne.
+        
+        Args:
+            force_retrain: Si True, force le réentraînement même si les modèles existent
+        """
         try:
             from .models import ModeleML
             from apps.produits.models import Produit
             from apps.produits.models import Prix
             
-            # Charger les produits
-            # Ne demander que des champs existants sur Produit
-            produits_qs = Produit.objects.select_related('categorie', 'marque').values(
-                'id', 'nom',
-                'categorie__nom',
-                'marque__nom',
-                'description',
-            )
-            # Si votre modèle Produit expose une sous-catégorie via Homologation ou autre, adapter ici.
-            # On mappe vers les clés attendues par le modèle contenu
-            produits = []
-            for r in produits_qs:
-                produits.append({
-                    'id': r['id'],
-                    'nom': r.get('nom') or '',
-                    'categorie': r.get('categorie__nom') or '',
-                    'marque': r.get('marque__nom') or '',
-                    'description': r.get('description') or '',
-                })
+            # Définir les chemins de sauvegarde
+            base_dir = Path(getattr(settings, 'BASE_DIR', Path(__file__).resolve().parents[3]))
+            models_dir = base_dir / 'ml_models' / 'saved'
+            models_dir.mkdir(parents=True, exist_ok=True)
             
-            # Charger les données de prix pour l'entraînement depuis Prix (champs existants)
-            prix_qs = Prix.objects.select_related(
-                'produit__categorie', 'produit__marque', 'produit__unite_mesure', 'magasin__ville'
-            ).values(
-                'produit__categorie__nom',
-                'produit__marque__nom',
-                'produit__unite_mesure__symbole',
-                'produit__quantite_unite',
-                'produit__poids',
-                'produit__volume',
-                'magasin__nom',
-                'magasin__ville__nom',
-                'magasin__type',
-                'magasin__zone',
-                'type_prix',
-                'prix_actuel',
-                'date_modification'
-            )[:10000]
-            # Remapper pour correspondre aux clés attendues par le pipeline ML
-            prix_data = [
-                {
-                    'categorie': r.get('produit__categorie__nom'),
-                    'sous_categorie': '',
-                    'marque': r.get('produit__marque__nom'),
-                    'magasin': r.get('magasin__nom'),
-                    'ville': r.get('magasin__ville__nom'),
-                    'type_magasin': r.get('magasin__type'),
-                    'zone': r.get('magasin__zone'),
-                    'type_prix': r.get('type_prix'),
-                    'unite_mesure': r.get('produit__unite_mesure__symbole'),
-                    'quantite_unite': r.get('produit__quantite_unite'),
-                    'poids': r.get('produit__poids'),
-                    'volume': r.get('produit__volume'),
-                    'prix': r.get('prix_actuel'),
-                    'date': r.get('date_modification'),
-                }
-                for r in prix_qs
-            ]
+            modele_contenu_path = models_dir / 'modele_contenu.joblib'
+            modele_prix_path = models_dir / 'modele_prix.joblib'
             
-            # Entraînement des modèles
-            self.modele_contenu.entrainer(produits)
-            if prix_data:
-                self.modele_prix.entrainer(prix_data)
+            # Vérifier l'âge des modèles (réentraîner si > 7 jours)
+            modele_age_max = 7 * 24 * 3600  # 7 jours en secondes
+            should_retrain = force_retrain
             
-            self.est_initialise = True
-            logger.info("Gestionnaire de recommandations initialisé")
+            if not force_retrain:
+                if modele_contenu_path.exists() and modele_prix_path.exists():
+                    age_contenu = datetime.now().timestamp() - modele_contenu_path.stat().st_mtime
+                    age_prix = datetime.now().timestamp() - modele_prix_path.stat().st_mtime
+                    if age_contenu > modele_age_max or age_prix > modele_age_max:
+                        logger.info("Modèles trop anciens, réentraînement nécessaire")
+                        should_retrain = True
+                    else:
+                        # Charger les modèles depuis le disque
+                        try:
+                            self.modele_contenu.charger(str(modele_contenu_path))
+                            self.modele_prix.charger(str(modele_prix_path))
+                            self.est_initialise = True
+                            logger.info("Modèles chargés depuis le disque (pas de réentraînement)")
+                            return
+                        except Exception as e:
+                            logger.warning(f"Erreur lors du chargement des modèles, réentraînement: {e}")
+                            should_retrain = True
+                else:
+                    should_retrain = True
+            
+            if should_retrain:
+                logger.info("Début de l'entraînement des modèles...")
+                
+                # Charger les produits
+                produits_qs = Produit.objects.select_related('categorie', 'marque').values(
+                    'id', 'nom',
+                    'categorie__nom',
+                    'marque__nom',
+                    'description',
+                )
+                produits = []
+                for r in produits_qs:
+                    produits.append({
+                        'id': r['id'],
+                        'nom': r.get('nom') or '',
+                        'categorie': r.get('categorie__nom') or '',
+                        'marque': r.get('marque__nom') or '',
+                        'description': r.get('description') or '',
+                    })
+                
+                # Charger les données de prix
+                prix_qs = Prix.objects.select_related(
+                    'produit__categorie', 'produit__marque', 'produit__unite_mesure', 'magasin__ville'
+                ).values(
+                    'produit__categorie__nom',
+                    'produit__marque__nom',
+                    'produit__unite_mesure__symbole',
+                    'produit__quantite_unite',
+                    'produit__poids',
+                    'produit__volume',
+                    'magasin__nom',
+                    'magasin__ville__nom',
+                    'magasin__type',
+                    'magasin__zone',
+                    'type_prix',
+                    'prix_actuel',
+                    'date_modification'
+                )[:10000]
+                prix_data = [
+                    {
+                        'categorie': r.get('produit__categorie__nom'),
+                        'sous_categorie': '',
+                        'marque': r.get('produit__marque__nom'),
+                        'magasin': r.get('magasin__nom'),
+                        'ville': r.get('magasin__ville__nom'),
+                        'type_magasin': r.get('magasin__type'),
+                        'zone': r.get('magasin__zone'),
+                        'type_prix': r.get('type_prix'),
+                        'unite_mesure': r.get('produit__unite_mesure__symbole'),
+                        'quantite_unite': r.get('produit__quantite_unite'),
+                        'poids': r.get('produit__poids'),
+                        'volume': r.get('produit__volume'),
+                        'prix': r.get('prix_actuel'),
+                        'date': r.get('date_modification'),
+                    }
+                    for r in prix_qs
+                ]
+                
+                # Entraînement des modèles
+                if produits:
+                    self.modele_contenu.entrainer(produits)
+                    # Sauvegarder le modèle de contenu
+                    try:
+                        self.modele_contenu.sauvegarder(str(modele_contenu_path))
+                    except Exception as e:
+                        logger.warning(f"Erreur lors de la sauvegarde du modèle contenu: {e}")
+                
+                if prix_data:
+                    self.modele_prix.entrainer(prix_data)
+                    # Sauvegarder le modèle de prix
+                    try:
+                        self.modele_prix.sauvegarder(str(modele_prix_path))
+                    except Exception as e:
+                        logger.warning(f"Erreur lors de la sauvegarde du modèle prix: {e}")
+                
+                self.est_initialise = True
+                logger.info("Gestionnaire de recommandations initialisé et modèles sauvegardés")
             
         except Exception as e:
-            logger.error(f"Erreur initialisation gestionnaire: {e}")
+            logger.error(f"Erreur initialisation gestionnaire: {e}", exc_info=True)
     
     def get_recommandations_produit(self, produit_id: int, n_recommandations: int = 10) -> List[Dict]:
         """Recommandations basées sur un produit"""

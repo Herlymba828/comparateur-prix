@@ -2,6 +2,7 @@ from django.contrib import admin
 from .models import (
     Prix, HistoriquePrix, AlertePrix, SuggestionPrix, ComparaisonPrix, Offre, PrixHomologue,
     Categorie, Marque, UniteMesure, Produit, AvisProduit, CaracteristiqueProduit, HistoriquePrixProduit,
+    ProduitLike,
 )
 
 @admin.register(Produit)
@@ -60,3 +61,12 @@ class PrixHomologueAdmin(admin.ModelAdmin):
     list_display = ['date_publication', 'localisation', 'source']
     list_filter = ['date_publication', 'localisation']
     search_fields = ['localisation', 'source']
+
+
+@admin.register(ProduitLike)
+class ProduitLikeAdmin(admin.ModelAdmin):
+    list_display = ['utilisateur', 'produit', 'date_creation']
+    list_filter = ['date_creation']
+    search_fields = ['utilisateur__username', 'produit__nom']
+    readonly_fields = ['date_creation']
+    autocomplete_fields = ['utilisateur', 'produit']

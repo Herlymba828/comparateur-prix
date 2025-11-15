@@ -11,18 +11,32 @@ from apps.produits.models import Prix
 def prix_proches_public(request):
     """
     Liste les prix d'un produit à proximité d'une position (public).
-    Params requis: produit_id, lat, lng
+    Params requis: produit_id (ou produit), lat/lng ou near=lat,lng
     Optionnels: rayon_km (def 10), max_results (def 50), sort=distance|price|combined, mode (pour durée)
     """
-    produit_id = request.GET.get("produit_id")
-    if not produit_id:
+    produit_param = request.GET.get("produit_id") or request.GET.get("produit")
+    if not produit_param:
         return Response({"error": "produit_id requis"}, status=HTTP_400_BAD_REQUEST)
+
+    lat_raw = request.GET.get("lat")
+    lng_raw = request.GET.get("lng")
+    near = request.GET.get("near")
+
+    if (lat_raw is None or lng_raw is None) and near:
+        try:
+            lat_raw, lng_raw = [coord.strip() for coord in near.split(",", 1)]
+        except ValueError:
+            return Response({"error": "Paramètre near invalide. Format attendu: 'lat,lng'."}, status=HTTP_400_BAD_REQUEST)
+
+    if lat_raw is None or lng_raw is None:
+        return Response({"error": "Paramètres lat/lng ou near requis"}, status=HTTP_400_BAD_REQUEST)
+
     try:
-        produit_id = int(produit_id)
-        lat = float(request.GET.get("lat"))
-        lng = float(request.GET.get("lng"))
+        produit_id = int(produit_param)
+        lat = float(lat_raw)
+        lng = float(lng_raw)
     except (TypeError, ValueError):
-        return Response({"error": "Paramètres lat et lng requis (float)"}, status=HTTP_400_BAD_REQUEST)
+        return Response({"error": "Paramètres produit/lat/lng invalides"}, status=HTTP_400_BAD_REQUEST)
 
     try:
         rayon_km = float(request.GET.get("rayon_km", 10))

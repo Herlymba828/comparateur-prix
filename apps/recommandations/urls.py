@@ -9,14 +9,32 @@ router.register(r'recommandations', views.RecommandationViewSet, basename='recom
 router.register(r'modeles-ml', views.ModeleMLViewSet, basename='modeles-ml')
 
 urlpatterns = [
-    path('api/', include(router.urls)),
-    path('api/statut-modeles/', views.statut_modeles, name='statut-modeles'),
+    # Le préfixe 'api/recommandations/' est déjà dans config/urls.py
+    path('', include(router.urls)),
+    path('statut-modeles/', views.statut_modeles, name='statut-modeles'),
+    
+    # Routes directes pour les actions (le router génère /recommandations/{action}/ mais le frontend attend /{action}/)
+    # Utiliser la vue fonction pour pour_moi (authentification garantie)
+    path('pour_moi/', 
+         views.recommandations_pour_moi, 
+         name='recommandations-pour-moi'),
+    # Utiliser la vue fonction pour populaires (accès public garanti)
+    path('populaires/', views.recommandations_populaires, name='recommandations-populaires'),
+    # Utiliser la vue fonction pour pour_produit (accès public garanti)
+    path('pour_produit/', views.recommandations_pour_produit, name='recommandations-pour-produit'),
     
     # URLs dépréciées (maintenues pour la compatibilité)
-    path('api/recommandations/utilisateur/', 
-         views.RecommandationViewSet.as_view({'get': 'pour_moi'}), 
+    path('recommandations/utilisateur/', 
+         views.recommandations_pour_moi, 
          name='recommandations-utilisateur-legacy'),
-    path('api/recommandations/produit/<int:produit_id>/', 
+    path('recommandations/produit/<int:produit_id>/', 
          views.RecommandationViewSet.as_view({'get': 'pour_produit'}), 
          name='recommandations-produit-legacy'),
+    
+    # Alias pour compatibilité frontend
+    path('reco/pour-vous/', 
+         views.recommandations_pour_moi, 
+         name='reco-pour-vous'),
+    # Utiliser la vue fonction pour tendances (accès public garanti)
+    path('reco/tendances/', views.recommandations_populaires, name='reco-tendances'),
 ]

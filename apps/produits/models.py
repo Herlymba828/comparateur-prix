@@ -97,7 +97,13 @@ class Produit(models.Model):
     poids = models.DecimalField(_("Poids"), max_digits=8, decimal_places=3, null=True, blank=True)
     volume = models.DecimalField(_("Volume"), max_digits=8, decimal_places=3, null=True, blank=True)
     unite_mesure = models.ForeignKey(UniteMesure, on_delete=models.PROTECT)
-    quantite_unite = models.DecimalField(_("Quantité par unité"), max_digits=8, decimal_places=3, default=1, validators=[MinValueValidator(0.001)])
+    quantite_unite = models.DecimalField(
+        _("Quantité par unité"),
+        max_digits=8,
+        decimal_places=3,
+        default=1,
+        validators=[MinValueValidator(Decimal("0.001"))],
+    )
     
     # Informations nutritionnelles
     energie_kcal = models.PositiveIntegerField(_("Énergie (kcal)"), null=True, blank=True)
@@ -169,7 +175,12 @@ class Prix(models.Model):
     produit = models.ForeignKey(Produit, on_delete=models.CASCADE, related_name='prix')
     magasin = models.ForeignKey('magasins.Magasin', on_delete=models.CASCADE, related_name='prix')
     
-    prix_actuel = models.DecimalField(_("Prix actuel"), max_digits=8, decimal_places=2, validators=[MinValueValidator(0.01)])
+    prix_actuel = models.DecimalField(
+        _("Prix actuel"),
+        max_digits=8,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"))],
+    )
     prix_origine = models.DecimalField(_("Prix d'origine"), max_digits=8, decimal_places=2, null=True, blank=True)
     devise = models.CharField(_("Devise"), max_length=10, default='FCFA')
     type_prix = models.CharField(_("Type de prix"), max_length=20, default='detail')
@@ -494,6 +505,16 @@ class HomologationProduit(models.Model):
     sous_categorie = models.CharField(max_length=120, blank=True)
     # Nouveau: liaison FK optionnelle vers une sous-catégorie hiérarchique
     sous_categorie_fk = models.ForeignKey(Categorie, on_delete=models.SET_NULL, null=True, blank=True, related_name='homologations')
+    # Liaison vers Produit pour unifier les produits scrappés
+    produit = models.OneToOneField(
+        Produit, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='homologation',
+        verbose_name=_("Produit associé"),
+        help_text=_("Produit unifié dans la table principale")
+    )
     reference_titre = models.CharField(max_length=255, blank=True)
     reference_numero = models.CharField(max_length=120, blank=True)
     reference_url = models.CharField(max_length=200, blank=True)
@@ -511,6 +532,72 @@ class HomologationProduit(models.Model):
 
     def __str__(self):
         return f"{self.nom} ({self.format})"
+    
+    def creer_produit_unifie(self):
+        """Crée ou récupère un Produit unifié à partir de l'HomologationProduit"""
+        if self.produit:
+            return self.produit
+        
+        from django.utils.text import slugify
+        from django.db import transaction
+        
+        with transaction.atomic():
+            # Chercher ou créer la catégorie
+            categorie, _ = Categorie.objects.get_or_create(
+                nom=self.categorie,
+                defaults={'slug': slugify(self.categorie)}
+            )
+            
+            # Chercher ou créer la marque si elle existe
+            marque = None
+            if self.marque:
+                marque, _ = Marque.objects.get_or_create(
+                    nom=self.marque,
+                    defaults={'slug': slugify(self.marque)}
+                )
+            
+            # Chercher une unité de mesure par défaut
+            unite_mesure, _ = UniteMesure.objects.get_or_create(
+                nom='Unité',
+                defaults={'symbole': 'U'}
+            )
+            
+            # Générer un code-barres unique basé sur l'ID de l'homologation
+            code_barre = f"DGCCRF{self.id:08d}"
+            
+            # Vérifier si un produit avec ce code-barres existe déjà
+            produit_existant = Produit.objects.filter(code_barre=code_barre).first()
+            if produit_existant:
+                # Si le produit existe déjà, le lier à cette homologation
+                self.produit = produit_existant
+                self.save(update_fields=['produit'])
+                return produit_existant
+            
+            # Générer un slug unique
+            base_slug = slugify(f"{self.nom}-{self.id}")[:200]
+            slug = base_slug
+            counter = 1
+            while Produit.objects.filter(slug=slug).exists():
+                slug = f"{base_slug}-{counter}"[:200]
+                counter += 1
+            
+            # Créer le produit unifié
+            produit = Produit.objects.create(
+                code_barre=code_barre,
+                nom=self.nom[:200],  # Limiter à 200 caractères
+                slug=slug,
+                categorie=categorie,
+                marque=marque,
+                unite_mesure=unite_mesure,
+                description=f"Produit homologué DGCCRF. Format: {self.format}" if self.format else "Produit homologué DGCCRF",
+                est_actif=True
+            )
+            
+            # Lier l'homologation au produit
+            self.produit = produit
+            self.save(update_fields=['produit'])
+            
+            return produit
 
 
 class PrixHomologue(models.Model):
@@ -539,3 +626,33 @@ class PrixHomologue(models.Model):
 
     def __str__(self):
         return f"PH {self.produit} {self.date_publication} {self.unite} {self.prix_unitaire}"
+
+
+class ProduitLike(models.Model):
+    """Modèle pour les produits likés par les utilisateurs"""
+    utilisateur = models.ForeignKey(
+        User, 
+        on_delete=models.CASCADE, 
+        related_name='produits_likes',
+        verbose_name=_("Utilisateur")
+    )
+    produit = models.ForeignKey(
+        Produit, 
+        on_delete=models.CASCADE, 
+        related_name='likes',
+        verbose_name=_("Produit")
+    )
+    date_creation = models.DateTimeField(_("Date de création"), auto_now_add=True)
+    
+    class Meta:
+        verbose_name = _("Produit liké")
+        verbose_name_plural = _("Produits likés")
+        unique_together = [('utilisateur', 'produit')]
+        ordering = ['-date_creation']
+        indexes = [
+            models.Index(fields=['utilisateur', 'date_creation']),
+            models.Index(fields=['produit']),
+        ]
+    
+    def __str__(self):
+        return f"{self.utilisateur.username} aime {self.produit.nom}"

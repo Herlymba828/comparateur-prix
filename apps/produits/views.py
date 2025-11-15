@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticatedOrReadOnly, IsAuthenticated
 from rest_framework.pagination import PageNumberPagination
 from django_filters.rest_framework import DjangoFilterBackend
-from django.db.models import Q, Avg, Count, Min, Max
+from django.db.models import Q, Avg, Count, Min, Max, F
 from django.utils.translation import gettext_lazy as _
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
@@ -38,13 +38,17 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticatedOrReadOnly, IsAuthenticated
 from rest_framework.pagination import PageNumberPagination
 from django_filters.rest_framework import DjangoFilterBackend
-from django.db.models import Q, Avg, Min, Max, Count, StdDev
+from django.db.models import Q, Avg, Min, Max, Count, StdDev, F
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from datetime import timedelta
+from decimal import Decimal
+import logging
 from .tasks import verifier_alertes_prix_task
 """Nettoyage: aucune importation de modèles non présents (AlertePrix, ComparaisonPrix, SuggestionPrix, Offre)."""
+
+logger = logging.getLogger(__name__)
 
 
 class StandardResultsSetPagination(PageNumberPagination):
@@ -66,8 +70,8 @@ class PrixViewSet(viewsets.ModelViewSet):
         'produit__nom', 'produit__code_barre', 'magasin__nom'
     ]
     ordering_fields = [
-        'prix_actuel', 'date_modification', 'pourcentage_promotion',
-        'confiance_prix'
+        'prix_actuel', 'date_modification', 'confiance_prix'
+        # Note: pourcentage_promotion est une propriété, pas un champ DB, donc non triable via order_by
     ]
     ordering = ['prix_actuel']
     pagination_class = StandardResultsSetPagination
@@ -126,18 +130,61 @@ class PrixViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def promotions(self, request):
         """Retourne les produits en promotion"""
-        produits_en_promotion = self.get_queryset().filter(
-            est_promotion=True,
-            est_promotion_valide=True
-        ).order_by('-pourcentage_promotion')
+        from django.utils import timezone
+        start_time = timezone.now()
+        ip_address = request.META.get('REMOTE_ADDR', 'unknown')
+        user_id = getattr(request.user, 'id', None) if request.user.is_authenticated else None
         
-        page = self.paginate_queryset(produits_en_promotion)
-        if page is not None:
-            serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
+        logger.info(
+            f"[PRIX] Début requête 'promotions' - User ID: {user_id}, IP: {ip_address}, "
+            f"Query params: {dict(request.query_params)}"
+        )
         
-        serializer = self.get_serializer(produits_en_promotion, many=True)
-        return Response(serializer.data)
+        try:
+            # est_promotion_valide est une propriété, pas un champ DB, donc on filtre seulement sur est_promotion
+            queryset = self.get_queryset().filter(est_promotion=True)
+            total_count = queryset.count()
+            logger.debug(f"[PRIX] Nombre total de prix en promotion trouvés: {total_count}")
+            
+            produits_en_promotion = list(queryset)
+            
+            # Trier par pourcentage_promotion (propriété) en Python
+            produits_en_promotion.sort(key=lambda x: x.pourcentage_promotion, reverse=True)
+            logger.debug(f"[PRIX] Produits triés par pourcentage de promotion décroissant")
+            
+            page = self.paginate_queryset(produits_en_promotion)
+            if page is not None:
+                serializer = self.get_serializer(page, many=True)
+                nb_retournes = len(page)
+                elapsed = (timezone.now() - start_time).total_seconds()
+                logger.info(
+                    f"[PRIX] Requête 'promotions' terminée avec succès (paginée) - "
+                    f"Total: {total_count}, Retourné: {nb_retournes}, "
+                    f"Temps d'exécution: {elapsed:.3f}s, IP: {ip_address}"
+                )
+                return self.get_paginated_response(serializer.data)
+            
+            serializer = self.get_serializer(produits_en_promotion, many=True)
+            nb_retournes = len(produits_en_promotion)
+            elapsed = (timezone.now() - start_time).total_seconds()
+            logger.info(
+                f"[PRIX] Requête 'promotions' terminée avec succès (non paginée) - "
+                f"Total: {total_count}, Retourné: {nb_retournes}, "
+                f"Temps d'exécution: {elapsed:.3f}s, IP: {ip_address}"
+            )
+            return Response(serializer.data)
+        except Exception as e:
+            elapsed = (timezone.now() - start_time).total_seconds()
+            logger.error(
+                f"[PRIX] Erreur lors de la récupération des promotions - "
+                f"User ID: {user_id}, IP: {ip_address}, Erreur: {str(e)}, "
+                f"Type: {type(e).__name__}, Temps écoulé: {elapsed:.3f}s",
+                exc_info=True
+            )
+            return Response(
+                {'erreur': 'Erreur lors de la récupération des promotions'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
     @action(detail=True, methods=['get'])
     def historique(self, request, pk=None):
@@ -156,10 +203,19 @@ class PrixViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def comparaison_produit(self, request):
         """Compare les prix d'un produit spécifique entre magasins"""
-        produit_id = request.query_params.get('produit_id')
+        # Accepter soit 'produit_id' soit 'produit' pour compatibilité
+        produit_id = request.query_params.get('produit_id') or request.query_params.get('produit')
         if not produit_id:
             return Response(
-                {'error': _("Le paramètre produit_id est requis")},
+                {'error': _("Le paramètre produit_id ou produit est requis")},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            produit_id = int(produit_id)
+        except (ValueError, TypeError):
+            return Response(
+                {'error': _("Le paramètre produit_id doit être un nombre entier valide")},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -196,6 +252,118 @@ class PrixViewSet(viewsets.ModelViewSet):
         }
         
         return Response(resultat)
+    
+    @action(detail=False, methods=['post'])
+    def batch(self, request):
+        """
+        Récupère plusieurs prix en une seule requête (batch).
+        
+        Body JSON:
+        {
+            "produit_ids": [1, 2, 3],
+            "magasin_ids": [10, 20],  // optionnel
+            "include_stats": true,    // optionnel, défaut: true
+            "filters": {              // optionnel
+                "est_promotion": true,
+                "rayon_km": 10
+            }
+        }
+        
+        Returns:
+        {
+            "count": 5,
+            "results": [
+                {
+                    "produit_id": 1,
+                    "magasin_id": 10,
+                    "prix_actuel": 1500.00,
+                    ...
+                },
+                ...
+            ]
+        }
+        """
+        from apps.produits.serializers import BatchPrixRequestSerializer
+        from apps.produits.services.price_enrichment import PriceEnrichmentService
+        
+        # Valider la requête
+        request_serializer = BatchPrixRequestSerializer(data=request.data)
+        if not request_serializer.is_valid():
+            return Response(
+                request_serializer.errors,
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        validated_data = request_serializer.validated_data
+        produit_ids = validated_data['produit_ids']
+        magasin_ids = validated_data.get('magasin_ids')
+        include_stats = validated_data.get('include_stats', True)
+        filters = validated_data.get('filters', {})
+        
+        # Limiter à 100 produits
+        if len(produit_ids) > 100:
+            return Response(
+                {'error': _("Maximum 100 produits par requête batch")},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            # Utiliser le service d'enrichissement avec cache
+            if magasin_ids:
+                # Récupérer les prix pour chaque combinaison produit/magasin
+                results = []
+                for produit_id in produit_ids:
+                    for magasin_id in magasin_ids:
+                        enriched = PriceEnrichmentService.get_enriched_price(
+                            produit_id=produit_id,
+                            magasin_id=magasin_id,
+                            include_stats=include_stats
+                        )
+                        # Appliquer les filtres si nécessaire
+                        if filters:
+                            if filters.get('est_promotion') and not enriched.get('est_promotion'):
+                                continue
+                        results.append(enriched)
+            else:
+                # Récupérer les meilleurs prix pour chaque produit
+                results = []
+                for produit_id in produit_ids:
+                    # Récupérer le meilleur prix (minimum)
+                    prix_obj = self.get_queryset().filter(
+                        produit_id=produit_id
+                    ).order_by('prix_actuel').first()
+                    
+                    if prix_obj:
+                        enriched = PriceEnrichmentService.get_enriched_price(
+                            produit_id=produit_id,
+                            magasin_id=prix_obj.magasin_id,
+                            include_stats=include_stats
+                        )
+                        # Appliquer les filtres
+                        if filters:
+                            if filters.get('est_promotion') and not enriched.get('est_promotion'):
+                                continue
+                        results.append(enriched)
+                    else:
+                        # Produit sans prix disponible
+                        results.append({
+                            'produit_id': produit_id,
+                            'magasin_id': None,
+                            'prix_actuel': None,
+                            'disponible': False,
+                        })
+            
+            return Response({
+                'count': len(results),
+                'results': results
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.exception("Erreur lors de la récupération batch des prix")
+            return Response(
+                {'error': _("Erreur lors de la récupération des prix"), 'detail': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
     @action(detail=False, methods=['get'])
     def evolution_prix(self, request):
@@ -391,7 +559,7 @@ class StatistiquesPrixViewSet(viewsets.ViewSet):
                 est_disponible=True
             ).aggregate(avg=Avg('prix_actuel'))['avg'],
             'promotions_actives': Prix.objects.filter(
-                est_promotion=True, est_promotion_valide=True
+                est_promotion=True
             ).count(),
             'produits_sans_prix': Prix.objects.filter(
                 est_disponible=False
@@ -418,9 +586,13 @@ class StatistiquesPrixViewSet(viewsets.ViewSet):
     
     def get_top_promotions(self):
         """Retourne les meilleures promotions"""
-        promos_qs = Prix.objects.filter(
-            est_promotion=True, est_promotion_valide=True
-        ).order_by('-pourcentage_promotion')[:10]
+        promos_qs = list(Prix.objects.filter(
+            est_promotion=True
+        ))
+        
+        # Trier par pourcentage_promotion (propriété) en Python
+        promos_qs.sort(key=lambda x: x.pourcentage_promotion, reverse=True)
+        promos_qs = promos_qs[:10]
         
         return [{
             'produit': prix.produit.nom,
@@ -561,11 +733,6 @@ class OffreViewSet(viewsets.ReadOnlyModelViewSet):
                 pass
         return qs
 
-class StandardResultsSetPagination(PageNumberPagination):
-    page_size = 20
-    page_size_query_param = 'page_size'
-    max_page_size = 100
-
 
 class CategorieViewSet(viewsets.ModelViewSet):
     queryset = Categorie.objects.prefetch_related('sous_categories').all()
@@ -645,7 +812,8 @@ class ProduitViewSet(viewsets.ModelViewSet):
     filterset_class = ProduitFilter
     search_fields = ['nom', 'code_barre', 'marque__nom']
     ordering_fields = [
-        'nom', 'date_creation', 'prix_moyen', 'prix_min', 'prix_max'
+        'nom', 'date_creation', 'prix_moyen_agg', 'prix_min_agg', 'prix_max_agg'
+        # Utiliser les annotations prix_moyen_agg, prix_min_agg, prix_max_agg au lieu de prix_moyen
     ]
     ordering = ['nom']
     pagination_class = StandardResultsSetPagination
@@ -660,7 +828,7 @@ class ProduitViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = super().get_queryset()
         
-        # Annoter avec les prix agrégés
+        # Annoter avec les prix agrégés pour toutes les actions (list et retrieve)
         queryset = queryset.annotate(
             prix_moyen_agg=Avg('prix__prix_actuel'),
             prix_min_agg=Min('prix__prix_actuel'),
@@ -669,6 +837,67 @@ class ProduitViewSet(viewsets.ModelViewSet):
         )
         
         return queryset
+    
+    def list(self, request, *args, **kwargs):
+        """Liste des produits avec logs détaillés"""
+        from django.utils import timezone
+        start_time = timezone.now()
+        ip_address = request.META.get('REMOTE_ADDR', 'unknown')
+        user_id = getattr(request.user, 'id', None) if request.user.is_authenticated else None
+        
+        # Extraire les paramètres de filtrage importants
+        prix_min = request.query_params.get('prix_min')
+        prix_max = request.query_params.get('prix_max')
+        ordering = request.query_params.get('ordering')
+        search = request.query_params.get('search')
+        page = request.query_params.get('page', 1)
+        page_size = request.query_params.get('page_size')
+        
+        logger.info(
+            f"[PRODUITS] Début requête 'list' - User ID: {user_id}, IP: {ip_address}, "
+            f"Prix min: {prix_min}, Prix max: {prix_max}, Ordering: {ordering}, "
+            f"Search: {search}, Page: {page}, Page size: {page_size}"
+        )
+        
+        try:
+            # Appeler la méthode parent pour le traitement normal
+            response = super().list(request, *args, **kwargs)
+            
+            # Compter les résultats retournés
+            if hasattr(response, 'data') and isinstance(response.data, dict):
+                count = response.data.get('count', len(response.data.get('results', [])))
+                results_count = len(response.data.get('results', []))
+            else:
+                count = results_count = 'unknown'
+            
+            elapsed = (timezone.now() - start_time).total_seconds()
+            logger.info(
+                f"[PRODUITS] Requête 'list' terminée avec succès - User ID: {user_id}, "
+                f"Total: {count}, Résultats page: {results_count}, "
+                f"Temps d'exécution: {elapsed:.3f}s, IP: {ip_address}"
+            )
+            
+            return response
+        except Exception as e:
+            elapsed = (timezone.now() - start_time).total_seconds()
+            logger.error(
+                f"[PRODUITS] Erreur lors de la récupération de la liste des produits - "
+                f"User ID: {user_id}, IP: {ip_address}, Prix min: {prix_min}, Prix max: {prix_max}, "
+                f"Ordering: {ordering}, Erreur: {str(e)}, Type: {type(e).__name__}, "
+                f"Temps écoulé: {elapsed:.3f}s",
+                exc_info=True
+            )
+            raise
+    
+    def get_object(self):
+        """Surcharge pour s'assurer que l'objet a les annotations"""
+        obj = super().get_object()
+        # S'assurer que les annotations sont présentes même pour retrieve
+        if not hasattr(obj, 'prix_moyen_agg'):
+            from django.db.models import Avg, Min, Max, Count
+            queryset = self.get_queryset().filter(pk=obj.pk)
+            obj = queryset.first() or obj
+        return obj
     
     @action(detail=True, methods=['get'])
     def avis(self, request, pk=None):
@@ -692,6 +921,199 @@ class ProduitViewSet(viewsets.ModelViewSet):
         
         serializer = HistoriquePrixProduitSerializer(historique, many=True)
         return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'])
+    def tous(self, request):
+        """Retourne TOUS les produits de la base de données (actifs et inactifs)"""
+        from django.utils import timezone
+        start_time = timezone.now()
+        ip_address = request.META.get('REMOTE_ADDR', 'unknown')
+        user_id = getattr(request.user, 'id', None) if request.user.is_authenticated else None
+        
+        logger.info(
+            f"[PRODUITS] Début requête 'tous' (tous les produits) - User ID: {user_id}, IP: {ip_address}, "
+            f"Query params: {dict(request.query_params)}"
+        )
+        
+        try:
+            # Récupérer tous les produits (actifs et inactifs)
+            queryset = Produit.objects.select_related(
+                'categorie', 'marque', 'unite_mesure'
+            ).prefetch_related(
+                'caracteristiques', 'avis'
+            ).all()  # Pas de filtre est_actif
+            
+            # Annoter avec les prix agrégés
+            queryset = queryset.annotate(
+                prix_moyen_agg=Avg('prix__prix_actuel'),
+                prix_min_agg=Min('prix__prix_actuel'),
+                prix_max_agg=Max('prix__prix_actuel'),
+                nombre_magasins_agg=Count('prix', distinct=True)
+            )
+            
+            total_count = queryset.count()
+            logger.debug(f"[PRODUITS] Nombre total de produits (actifs + inactifs): {total_count}")
+            
+            # Appliquer la pagination
+            page = self.paginate_queryset(queryset)
+            if page is not None:
+                serializer = ProduitListSerializer(page, many=True)
+                nb_retournes = len(page)
+                elapsed = (timezone.now() - start_time).total_seconds()
+                logger.info(
+                    f"[PRODUITS] Requête 'tous' terminée avec succès (paginée) - "
+                    f"Total: {total_count}, Retourné: {nb_retournes}, "
+                    f"Temps d'exécution: {elapsed:.3f}s, IP: {ip_address}"
+                )
+                return self.get_paginated_response(serializer.data)
+            
+            serializer = ProduitListSerializer(queryset, many=True)
+            nb_retournes = len(queryset)
+            elapsed = (timezone.now() - start_time).total_seconds()
+            logger.info(
+                f"[PRODUITS] Requête 'tous' terminée avec succès (non paginée) - "
+                f"Total: {total_count}, Retourné: {nb_retournes}, "
+                f"Temps d'exécution: {elapsed:.3f}s, IP: {ip_address}"
+            )
+            return Response(serializer.data)
+        except Exception as e:
+            elapsed = (timezone.now() - start_time).total_seconds()
+            logger.error(
+                f"[PRODUITS] Erreur lors de la récupération de tous les produits - "
+                f"User ID: {user_id}, IP: {ip_address}, Erreur: {str(e)}, "
+                f"Type: {type(e).__name__}, Temps écoulé: {elapsed:.3f}s",
+                exc_info=True
+            )
+            return Response(
+                {'erreur': 'Erreur lors de la récupération des produits'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @action(detail=False, methods=['get'])
+    def defiscalises(self, request):
+        """Retourne tous les produits défiscalisés"""
+        from django.utils import timezone
+        from django.db.models import Q
+        start_time = timezone.now()
+        ip_address = request.META.get('REMOTE_ADDR', 'unknown')
+        user_id = getattr(request.user, 'id', None) if request.user.is_authenticated else None
+        
+        logger.info(
+            f"[PRODUITS] Début requête 'defiscalises' - User ID: {user_id}, IP: {ip_address}, "
+            f"Query params: {dict(request.query_params)}"
+        )
+        
+        try:
+            queryset = self.get_queryset()
+            
+            # Appliquer le filtre défiscalisé
+            categories_defiscalisees = ['Alimentaire', 'Médicament', 'Équipement médical']
+            queryset = queryset.filter(
+                Q(categorie__nom__in=categories_defiscalisees) |
+                Q(categorie__sous_categories__nom__in=categories_defiscalisees)
+            ).distinct()
+            
+            total_count = queryset.count()
+            logger.debug(f"[PRODUITS] Nombre de produits défiscalisés trouvés: {total_count}")
+            
+            # Appliquer la pagination
+            page = self.paginate_queryset(queryset)
+            if page is not None:
+                serializer = ProduitListSerializer(page, many=True)
+                nb_retournes = len(page)
+                elapsed = (timezone.now() - start_time).total_seconds()
+                logger.info(
+                    f"[PRODUITS] Requête 'defiscalises' terminée avec succès (paginée) - "
+                    f"Total: {total_count}, Retourné: {nb_retournes}, "
+                    f"Temps d'exécution: {elapsed:.3f}s, IP: {ip_address}"
+                )
+                return self.get_paginated_response(serializer.data)
+            
+            serializer = ProduitListSerializer(queryset, many=True)
+            nb_retournes = len(queryset)
+            elapsed = (timezone.now() - start_time).total_seconds()
+            logger.info(
+                f"[PRODUITS] Requête 'defiscalises' terminée avec succès (non paginée) - "
+                f"Total: {total_count}, Retourné: {nb_retournes}, "
+                f"Temps d'exécution: {elapsed:.3f}s, IP: {ip_address}"
+            )
+            return Response(serializer.data)
+        except Exception as e:
+            elapsed = (timezone.now() - start_time).total_seconds()
+            logger.error(
+                f"[PRODUITS] Erreur lors de la récupération des produits défiscalisés - "
+                f"User ID: {user_id}, IP: {ip_address}, Erreur: {str(e)}, "
+                f"Type: {type(e).__name__}, Temps écoulé: {elapsed:.3f}s",
+                exc_info=True
+            )
+            return Response(
+                {'erreur': 'Erreur lors de la récupération des produits défiscalisés'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @action(detail=False, methods=['get'])
+    def homologues(self, request):
+        """Retourne tous les produits homologués (correspondance avec HomologationProduit)"""
+        from django.utils import timezone
+        from django.db.models import Q, Exists, OuterRef
+        start_time = timezone.now()
+        ip_address = request.META.get('REMOTE_ADDR', 'unknown')
+        user_id = getattr(request.user, 'id', None) if request.user.is_authenticated else None
+        
+        logger.info(
+            f"[PRODUITS] Début requête 'homologues' - User ID: {user_id}, IP: {ip_address}, "
+            f"Query params: {dict(request.query_params)}"
+        )
+        
+        try:
+            queryset = self.get_queryset()
+            
+            # Vérifier si un produit correspond à un HomologationProduit par nom
+            homologations = HomologationProduit.objects.filter(
+                Q(nom__iexact=OuterRef('nom')) |
+                Q(nom__icontains=OuterRef('nom'))
+            )
+            queryset = queryset.annotate(
+                est_homologue_agg=Exists(homologations)
+            ).filter(est_homologue_agg=True)
+            
+            total_count = queryset.count()
+            logger.debug(f"[PRODUITS] Nombre de produits homologués trouvés: {total_count}")
+            
+            # Appliquer la pagination
+            page = self.paginate_queryset(queryset)
+            if page is not None:
+                serializer = ProduitListSerializer(page, many=True)
+                nb_retournes = len(page)
+                elapsed = (timezone.now() - start_time).total_seconds()
+                logger.info(
+                    f"[PRODUITS] Requête 'homologues' terminée avec succès (paginée) - "
+                    f"Total: {total_count}, Retourné: {nb_retournes}, "
+                    f"Temps d'exécution: {elapsed:.3f}s, IP: {ip_address}"
+                )
+                return self.get_paginated_response(serializer.data)
+            
+            serializer = ProduitListSerializer(queryset, many=True)
+            nb_retournes = len(queryset)
+            elapsed = (timezone.now() - start_time).total_seconds()
+            logger.info(
+                f"[PRODUITS] Requête 'homologues' terminée avec succès (non paginée) - "
+                f"Total: {total_count}, Retourné: {nb_retournes}, "
+                f"Temps d'exécution: {elapsed:.3f}s, IP: {ip_address}"
+            )
+            return Response(serializer.data)
+        except Exception as e:
+            elapsed = (timezone.now() - start_time).total_seconds()
+            logger.error(
+                f"[PRODUITS] Erreur lors de la récupération des produits homologués - "
+                f"User ID: {user_id}, IP: {ip_address}, Erreur: {str(e)}, "
+                f"Type: {type(e).__name__}, Temps écoulé: {elapsed:.3f}s",
+                exc_info=True
+            )
+            return Response(
+                {'erreur': 'Erreur lors de la récupération des produits homologués'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
     def ajouter_avis(self, request, pk=None):
@@ -718,15 +1140,32 @@ class ProduitViewSet(viewsets.ModelViewSet):
         prix_max = request.query_params.get('prix_max')
         note_min = request.query_params.get('note_min')
         
-        if prix_min:
-            queryset = queryset.filter(prix_moyen_agg__gte=prix_min)
-        if prix_max:
-            queryset = queryset.filter(prix_moyen_agg__lte=prix_max)
+        try:
+            if prix_min:
+                prix_min_decimal = Decimal(str(prix_min))
+                queryset = queryset.filter(prix_moyen_agg__gte=prix_min_decimal)
+            if prix_max:
+                prix_max_decimal = Decimal(str(prix_max))
+                queryset = queryset.filter(prix_moyen_agg__lte=prix_max_decimal)
+        except (ValueError, TypeError) as e:
+            logger.warning(f"Erreur de conversion prix_min/prix_max: {e}")
+            return Response(
+                {'error': _("Les paramètres prix_min et prix_max doivent être des nombres valides")},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
         if note_min:
-            # Filtrer par note moyenne des avis
-            queryset = queryset.annotate(
-                note_moyenne=Avg('avis__note')
-            ).filter(note_moyenne__gte=note_min)
+            try:
+                note_min_float = float(note_min)
+                # Filtrer par note moyenne des avis
+                queryset = queryset.annotate(
+                    note_moyenne=Avg('avis__note')
+                ).filter(note_moyenne__gte=note_min_float)
+            except (ValueError, TypeError):
+                return Response(
+                    {'error': _("Le paramètre note_min doit être un nombre valide")},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
         
         page = self.paginate_queryset(queryset)
         if page is not None:
@@ -734,6 +1173,34 @@ class ProduitViewSet(viewsets.ModelViewSet):
             return self.get_paginated_response(serializer.data)
         
         serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'], url_path='populaires')
+    def populaires(self, request):
+        """Retourne les produits les plus populaires (activités/prix disponibles)."""
+        queryset = (
+            self.get_queryset()
+            .annotate(
+                nb_prix=Count('prix', distinct=True),
+                nb_avis=Count('avis', distinct=True),
+            )
+            .filter(nb_prix__gt=0)
+            .annotate(score_popularite=F('nb_prix') * 2 + F('nb_avis'))
+            .order_by('-score_popularite', '-nb_prix', '-date_creation')
+        )
+
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = ProduitListSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        limit = request.query_params.get('limit')
+        try:
+            limit_value = max(1, min(int(limit), 100)) if limit else 12
+        except (TypeError, ValueError):
+            limit_value = 12
+
+        serializer = ProduitListSerializer(queryset[:limit_value], many=True)
         return Response(serializer.data)
     
     @action(detail=False, methods=['get'])
@@ -846,10 +1313,36 @@ class ProduitViewSet(viewsets.ModelViewSet):
 
         return Response(result)
     
-    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
+    @action(detail=True, methods=['get', 'post'])
     def comparer(self, request, pk=None):
-        """Compare ce produit avec d'autres produits"""
+        """Compare ce produit avec d'autres produits
+        
+        GET: Récupère les produits similaires pour comparaison (public)
+        POST: Compare ce produit avec une liste de produits spécifiés (authentifié)
+        """
         produit_principal = self.get_object()
+        
+        if request.method == 'GET':
+            # Pour GET, retourner les produits similaires de la même catégorie
+            produits_similaires = Produit.objects.filter(
+                categorie=produit_principal.categorie,
+                est_actif=True
+            ).exclude(id=produit_principal.id).select_related('categorie', 'marque', 'unite_mesure')[:10]
+            
+            comparaison = {
+                'produit_principal': ProduitDetailSerializer(produit_principal).data,
+                'produits_similaires': ProduitListSerializer(produits_similaires, many=True).data,
+                'critères': ['prix', 'caractéristiques', 'notes']
+            }
+            return Response(comparaison)
+        
+        # POST: Comparaison avec produits spécifiés (nécessite authentification)
+        if not request.user.is_authenticated:
+            return Response(
+                {'error': _("Authentification requise pour la comparaison personnalisée")},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+        
         produits_ids = request.data.get('produits_ids', [])
         
         if not produits_ids:
@@ -872,6 +1365,156 @@ class ProduitViewSet(viewsets.ModelViewSet):
         }
         
         return Response(comparaison)
+    
+    @action(detail=True, methods=['get'], url_path='comparaison')
+    def comparaison(self, request, pk=None):
+        """Alias GET pour la comparaison (compatibilité frontend)"""
+        return self.comparer(request, pk)
+    
+    @action(detail=True, methods=['post', 'delete'], permission_classes=[IsAuthenticated])
+    def like(self, request, pk=None):
+        """Liker ou unliker un produit (nécessite authentification)"""
+        # La permission IsAuthenticated va gérer l'authentification automatiquement
+        # On log juste pour déboguer si nécessaire
+        auth_header = request.META.get('HTTP_AUTHORIZATION', 'Non fourni')
+        logger.debug(
+            f"[PRODUITS] Requête 'like' - User: {request.user}, "
+            f"Authentifié: {request.user.is_authenticated if hasattr(request.user, 'is_authenticated') else 'N/A'}, "
+            f"Auth Header présent: {bool(auth_header and auth_header != 'Non fourni')}, "
+            f"Produit ID: {pk}, Method: {request.method}"
+        )
+        
+        produit = self.get_object()
+        from .models import ProduitLike
+        
+        try:
+            if request.method == 'POST':
+                # Liker le produit
+                like, created = ProduitLike.objects.get_or_create(
+                    utilisateur=request.user,
+                    produit=produit
+                )
+                if created:
+                    logger.info(f"[PRODUITS] Produit {produit.id} liké par User ID: {request.user.id}")
+                    return Response({
+                        'message': _('Produit ajouté aux favoris'),
+                        'liked': True,
+                        'produit_id': produit.id
+                    }, status=status.HTTP_201_CREATED)
+                else:
+                    return Response({
+                        'message': _('Produit déjà dans vos favoris'),
+                        'liked': True,
+                        'produit_id': produit.id
+                    }, status=status.HTTP_200_OK)
+            
+            elif request.method == 'DELETE':
+                # Unliker le produit
+                deleted = ProduitLike.objects.filter(
+                    utilisateur=request.user,
+                    produit=produit
+                ).delete()[0]
+                
+                if deleted:
+                    logger.info(f"[PRODUITS] Produit {produit.id} unliké par User ID: {request.user.id}")
+                    return Response({
+                        'message': _('Produit retiré des favoris'),
+                        'liked': False,
+                        'produit_id': produit.id
+                    }, status=status.HTTP_200_OK)
+                else:
+                    return Response({
+                        'message': _('Produit non trouvé dans vos favoris'),
+                        'liked': False,
+                        'produit_id': produit.id
+                    }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(
+                f"[PRODUITS] Erreur lors du like/unlike - User ID: {request.user.id}, "
+                f"Produit ID: {produit.id}, Erreur: {str(e)}",
+                exc_info=True
+            )
+            return Response({
+                'erreur': _('Une erreur est survenue lors de l\'opération'),
+                'detail': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
+    def mes_likes(self, request):
+        """Retourne tous les produits likés par l'utilisateur connecté"""
+        # La permission IsAuthenticated va gérer l'authentification automatiquement
+        auth_header = request.META.get('HTTP_AUTHORIZATION', 'Non fourni')
+        logger.debug(
+            f"[PRODUITS] Requête 'mes_likes' - User: {request.user}, "
+            f"Authentifié: {request.user.is_authenticated if hasattr(request.user, 'is_authenticated') else 'N/A'}, "
+            f"Auth Header présent: {bool(auth_header and auth_header != 'Non fourni')}"
+        )
+        
+        from .models import ProduitLike
+        from django.utils import timezone
+        
+        start_time = timezone.now()
+        ip_address = request.META.get('REMOTE_ADDR', 'unknown')
+        user_id = request.user.id
+        
+        logger.info(
+            f"[PRODUITS] Début requête 'mes_likes' - User ID: {user_id}, IP: {ip_address}"
+        )
+        
+        try:
+            likes = ProduitLike.objects.filter(
+                utilisateur=request.user
+            ).select_related('produit', 'produit__categorie', 'produit__marque', 'produit__unite_mesure')
+            
+            # Annoter avec les prix agrégés
+            likes = likes.annotate(
+                prix_moyen_agg=Avg('produit__prix__prix_actuel'),
+                prix_min_agg=Min('produit__prix__prix_actuel'),
+                prix_max_agg=Max('produit__prix__prix_actuel'),
+                nombre_magasins_agg=Count('produit__prix', distinct=True)
+            ).order_by('-date_creation')
+            
+            total_count = likes.count()
+            logger.debug(f"[PRODUITS] Nombre de produits likés trouvés: {total_count}")
+            
+            # Pagination
+            page = self.paginate_queryset(likes)
+            if page is not None:
+                # Extraire les produits de la page
+                produits = [like.produit for like in page]
+                serializer = ProduitListSerializer(produits, many=True)
+                nb_retournes = len(page)
+                elapsed = (timezone.now() - start_time).total_seconds()
+                logger.info(
+                    f"[PRODUITS] Requête 'mes_likes' terminée avec succès (paginée) - "
+                    f"Total: {total_count}, Retourné: {nb_retournes}, "
+                    f"Temps d'exécution: {elapsed:.3f}s, IP: {ip_address}"
+                )
+                return self.get_paginated_response(serializer.data)
+            
+            # Sans pagination
+            produits = [like.produit for like in likes]
+            serializer = ProduitListSerializer(produits, many=True)
+            nb_retournes = len(produits)
+            elapsed = (timezone.now() - start_time).total_seconds()
+            logger.info(
+                f"[PRODUITS] Requête 'mes_likes' terminée avec succès (non paginée) - "
+                f"Total: {total_count}, Retourné: {nb_retournes}, "
+                f"Temps d'exécution: {elapsed:.3f}s, IP: {ip_address}"
+            )
+            return Response(serializer.data)
+        except Exception as e:
+            elapsed = (timezone.now() - start_time).total_seconds()
+            logger.error(
+                f"[PRODUITS] Erreur lors de la récupération des produits likés - "
+                f"User ID: {user_id}, IP: {ip_address}, Erreur: {str(e)}, "
+                f"Type: {type(e).__name__}, Temps écoulé: {elapsed:.3f}s",
+                exc_info=True
+            )
+            return Response(
+                {'erreur': 'Erreur lors de la récupération des produits likés'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class AvisProduitViewSet(viewsets.ModelViewSet):

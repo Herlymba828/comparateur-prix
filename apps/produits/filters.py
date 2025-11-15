@@ -1,6 +1,6 @@
 import django_filters
-from django.db.models import Q
-from .models import Produit, Categorie, Marque, UniteMesure, Prix, AlertePrix, SuggestionPrix
+from django.db.models import Q, Exists, OuterRef
+from .models import Produit, Categorie, Marque, UniteMesure, Prix, AlertePrix, SuggestionPrix, HomologationProduit
 
 
 class CategorieFilter(django_filters.FilterSet):
@@ -40,8 +40,9 @@ class ProduitFilter(django_filters.FilterSet):
     code_barre = django_filters.CharFilter(lookup_expr='exact')
     categorie = django_filters.ModelChoiceFilter(queryset=Categorie.objects.all())
     marque = django_filters.ModelChoiceFilter(queryset=Marque.objects.all())
-    prix_min = django_filters.NumberFilter(field_name='prix__prix_actuel', lookup_expr='gte')
-    prix_max = django_filters.NumberFilter(field_name='prix__prix_actuel', lookup_expr='lte')
+    # Filtres de prix utilisant les annotations du queryset
+    prix_min = django_filters.NumberFilter(method='filter_prix_min')
+    prix_max = django_filters.NumberFilter(method='filter_prix_max')
     unite_mesure = django_filters.ModelChoiceFilter(field_name='unite_mesure', queryset=UniteMesure.objects.all())
     
     # Filtre pour la recherche par catégorie et sous-catégories
@@ -51,9 +52,25 @@ class ProduitFilter(django_filters.FilterSet):
         label="Catégorie (incluant les sous-catégories)"
     )
     
+    # Filtres pour produits défiscalisés et homologués
+    est_defiscalise = django_filters.BooleanFilter(method='filter_est_defiscalise')
+    est_homologue = django_filters.BooleanFilter(method='filter_est_homologue')
+    
     class Meta:
         model = Produit
         fields = ['nom', 'code_barre', 'categorie', 'marque', 'unite_mesure']
+    
+    def filter_prix_min(self, queryset, name, value):
+        """Filtre par prix minimum en utilisant l'annotation prix_moyen_agg"""
+        if value is not None:
+            return queryset.filter(prix_moyen_agg__gte=value)
+        return queryset
+    
+    def filter_prix_max(self, queryset, name, value):
+        """Filtre par prix maximum en utilisant l'annotation prix_moyen_agg"""
+        if value is not None:
+            return queryset.filter(prix_moyen_agg__lte=value)
+        return queryset
     
     def filter_categorie_etendue(self, queryset, name, value):
         """Filtre par catégorie en incluant les sous-catégories"""
@@ -68,6 +85,54 @@ class ProduitFilter(django_filters.FilterSet):
         
         categories_ids = get_sous_categories_ids(value)
         return queryset.filter(categorie_id__in=categories_ids)
+    
+    def filter_est_defiscalise(self, queryset, name, value):
+        """Filtre les produits défiscalisés (basé sur la catégorie ou autres critères)"""
+        if value is None:
+            return queryset
+        
+        # Logique: produits défiscalisés sont généralement dans certaines catégories
+        # Vous pouvez ajuster cette logique selon vos besoins métier
+        # Exemple: catégories spécifiques ou un champ dédié si ajouté au modèle
+        categories_defiscalisees = ['Alimentaire', 'Médicament', 'Équipement médical']
+        
+        if value:
+            # Produits défiscalisés: correspondance par nom de catégorie ou sous-catégorie
+            return queryset.filter(
+                Q(categorie__nom__in=categories_defiscalisees) |
+                Q(categorie__sous_categories__nom__in=categories_defiscalisees)
+            ).distinct()
+        else:
+            # Produits non défiscalisés
+            return queryset.exclude(
+                Q(categorie__nom__in=categories_defiscalisees) |
+                Q(categorie__sous_categories__nom__in=categories_defiscalisees)
+            )
+    
+    def filter_est_homologue(self, queryset, name, value):
+        """Filtre les produits homologués (correspondance avec HomologationProduit)"""
+        if value is None:
+            return queryset
+        
+        # Vérifier si un produit correspond à un HomologationProduit par nom ou code-barres
+        if value:
+            # Produits homologués: correspondance par nom (approximative) ou code-barres
+            homologations = HomologationProduit.objects.filter(
+                Q(nom__iexact=OuterRef('nom')) |
+                Q(nom__icontains=OuterRef('nom'))
+            )
+            return queryset.annotate(
+                est_homologue_agg=Exists(homologations)
+            ).filter(est_homologue_agg=True)
+        else:
+            # Produits non homologués
+            homologations = HomologationProduit.objects.filter(
+                Q(nom__iexact=OuterRef('nom')) |
+                Q(nom__icontains=OuterRef('nom'))
+            )
+            return queryset.annotate(
+                est_homologue_agg=Exists(homologations)
+            ).filter(est_homologue_agg=False)
 
 
 class AlertePrixFilter(django_filters.FilterSet):

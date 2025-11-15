@@ -2,8 +2,6 @@ from django.urls import path, include
 from rest_framework import permissions
 from rest_framework.routers import DefaultRouter
 from . import views
-from rest_framework_simplejwt.views import TokenRefreshView
-from .tokens import EmailTokenObtainPairView
 
 app_name = 'utilisateurs'
 
@@ -21,9 +19,7 @@ urlpatterns = [
     path('api/auth/login/', views.LoginView.as_view(), name='auth-login'),
     path('api/auth/activate/', views.ActivateView.as_view(), name='auth-activate'),
     path('activate/<str:uid>/<str:token>/', views.web_activate_uid_page, name='web-activate-uid'),
-    # SimpleJWT (token via email uniquement)
-    path('api/token/', EmailTokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    # Note: JWT endpoints sont définis dans config/urls.py sous api/auth/token/
 ]
 
 # Session management endpoints

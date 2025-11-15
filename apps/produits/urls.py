@@ -20,4 +20,7 @@ router.register(r'statistiques-produits', views.StatistiquesProduitViewSet, base
 
 urlpatterns = [
     path('', include(router.urls)),
+    # Alias pour compatibilité frontend
+    path('populaires/', views.ProduitViewSet.as_view({'get': 'populaires'}), name='produits-populaires-alias'),
+    path('categories/', views.CategorieViewSet.as_view({'get': 'list'}), name='categories-alias'),
 ]

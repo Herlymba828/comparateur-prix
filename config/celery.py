@@ -64,13 +64,31 @@ app.conf.beat_schedule = {
     'dgccrf-scrape-quotidien': {
         'task': 'apps.produits.tasks.dgccrf_scrape_report_task',
         'schedule': 86400.0,  # 1 jour
-        'args': (None, True, True, True, 'data/dgccrf_daily.csv', 'data/dgccrf_daily.sql', 'data/dgccrf_daily_report.json'),
+        'kwargs': {
+            'limit': None,
+            'unified': True,
+            'save': True,
+            'only_changed': True,
+            'csv_out': 'data/dgccrf_daily.csv',
+            'sql_out': 'data/dgccrf_daily.sql',
+            'report_out': 'data/dgccrf_daily_report.json',
+            'sources': ['liste_produit'],
+        },
     },
     # Scraping DGCCRF mensuel (rafraîchissement complet)
     'dgccrf-scrape-mensuel': {
         'task': 'apps.produits.tasks.dgccrf_scrape_report_task',
         'schedule': 2592000.0,  # 30 jours
-        'args': (None, True, True, False, 'data/dgccrf_monthly.csv', 'data/dgccrf_monthly.sql', 'data/dgccrf_monthly_report.json'),
+        'kwargs': {
+            'limit': None,
+            'unified': True,
+            'save': True,
+            'only_changed': False,  # Rafraîchissement complet
+            'csv_out': 'data/dgccrf_monthly.csv',
+            'sql_out': 'data/dgccrf_monthly.sql',
+            'report_out': 'data/dgccrf_monthly_report.json',
+            'sources': ['liste_produit'],
+        },
     },
     # Géocoder quotidiennement les magasins sans coordonnées (si clé HERE fournie)
     'geocode-magasins-daily': {

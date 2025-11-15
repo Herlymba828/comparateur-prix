@@ -77,6 +77,14 @@ class Command(BaseCommand):
                 updated = True
             if updated and not dry_run:
                 produit.save()
+            
+            # Créer le produit unifié dans la table Produit si nécessaire
+            if not produit.produit and not dry_run:
+                try:
+                    produit_unifie = produit.creer_produit_unifie()
+                    logger.info(f"Produit unifié créé: {produit_unifie.id} pour HomologationProduit {produit.id}")
+                except Exception as e:
+                    logger.error(f"Erreur lors de la création du produit unifié pour {produit.id}: {e}")
 
             # Prix séparés par localisation
             prix_lib = item.get('prix_libreville')

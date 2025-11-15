@@ -1,0 +1,11 @@
+# Scraper et sauvegarder toutes les données
+python manage.py scrape_dgccrf
+
+# Limiter à 50 éléments
+python manage.py scrape_dgccrf --limit 50
+
+# Scraper plusieurs sources
+python manage.py scrape_dgccrf --sources liste_produit,prix_homologue
+
+# Test sans sauvegarder
+python manage.py scrape_dgccrf --no-save
