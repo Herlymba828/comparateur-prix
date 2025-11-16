@@ -302,24 +302,46 @@ Dans cPanel :
 
 ## ✅ ÉTAPE 11 : Tests et vérifications
 
-### 11.1 Tester l'API
+> 📖 **Guide complet** : Consultez [`docs/VERIFICATION_BACKEND.md`](../VERIFICATION_BACKEND.md) pour un guide détaillé de vérification.
+
+### 11.1 Tests rapides via navigateur
 
 Ouvrez votre navigateur et visitez :
 
-- **Swagger UI** : `https://ftp.navixtechnology.com/api/docs/`
-- **API Produits** : `https://ftp.navixtechnology.com/api/produits/produits/`
-- **Admin Django** : `https://ftp.navixtechnology.com/admin/`
+- **Health Check** : `https://ftp.navixtechnology.com/api/health/` → Doit retourner `{"status": "ok"}`
+- **Test Connection** : `https://ftp.navixtechnology.com/api/test-connection/` → Doit retourner un statut de succès
+- **Swagger UI** : `https://ftp.navixtechnology.com/api/docs/` → Doit afficher la documentation
+- **API Produits** : `https://ftp.navixtechnology.com/api/produits/produits/` → Doit retourner une liste (peut être vide)
+- **Admin Django** : `https://ftp.navixtechnology.com/admin/` → Doit afficher la page de connexion
 
-### 11.2 Tester l'authentification
+### 11.2 Tests via PowerShell (Windows)
+
+Sur votre machine Windows, exécutez le script de test :
+
+```powershell
+.\scripts\test_backend.ps1
+```
+
+Ce script teste automatiquement tous les endpoints principaux.
+
+### 11.3 Tests via cURL (SSH)
+
+Si vous êtes connecté en SSH :
 
 ```bash
-# Tester l'obtention d'un token JWT
+# Test Health Check
+curl https://ftp.navixtechnology.com/api/health/
+
+# Test Connection
+curl https://ftp.navixtechnology.com/api/test-connection/
+
+# Test Authentification JWT
 curl -X POST https://ftp.navixtechnology.com/api/auth/token/ \
   -H "Content-Type: application/json" \
   -d '{"username":"votre_username","password":"votre_password"}'
 ```
 
-### 11.3 Vérifier les logs
+### 11.4 Vérifier les logs
 
 Si quelque chose ne fonctionne pas :
 

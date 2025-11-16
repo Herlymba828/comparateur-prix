@@ -10,8 +10,14 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE_DIR)
 
 # Activer l'environnement virtuel
+# Chemin de l'environnement virtuel créé dans cPanel
 activate_this = '/home/rs2694021ez6eg8n/virtualenv/public_html/comparer/3.11/bin/activate_this.py'
 if os.path.exists(activate_this):
+    with open(activate_this) as f:
+        exec(f.read(), {'__file__': activate_this})
+elif os.path.exists('/home/rs2694021ez6eg8n/virtualenv/public_html/comparer/3.11/bin/activate'):
+    # Fallback si activate_this.py n'existe pas
+    activate_this = '/home/rs2694021ez6eg8n/virtualenv/public_html/comparer/3.11/bin/activate'
     with open(activate_this) as f:
         exec(f.read(), {'__file__': activate_this})
 
