@@ -257,53 +257,114 @@ try:
 except ImportError:
     pass
 
-# Détecter le type de base de données depuis les variables d'environnement
-DB_ENGINE = os.getenv('DB_ENGINE', 'postgresql').lower()
-DB_NAME = os.getenv('DB_NAME') or os.getenv('POSTGRES_DB') or os.getenv('MYSQL_DB', 'soutenance2')
-DB_USER = os.getenv('DB_USER') or os.getenv('POSTGRES_USER') or os.getenv('MYSQL_USER', 'postgres')
-# Lire DB_PASSWORD en essayant plusieurs variables d'environnement possibles
-# Note: os.getenv retourne None si la variable n'existe pas, donc on utilise '' comme fallback
-DB_PASSWORD = (
-    os.getenv('DB_PASSWORD') or 
-    os.getenv('POSTGRES_PASSWORD') or 
-    os.getenv('MYSQL_PASSWORD') or 
-    ''
-)
-DB_HOST = os.getenv('DB_HOST') or os.getenv('POSTGRES_HOST') or os.getenv('MYSQL_HOST', 'localhost')
-DB_PORT = os.getenv('DB_PORT') or os.getenv('POSTGRES_PORT') or os.getenv('MYSQL_PORT', '3306' if DB_ENGINE == 'mysql' else '5432')
-
-if DB_ENGINE == 'mysql':
-    # Configuration MySQL/MariaDB
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.mysql',
-            'NAME': DB_NAME,
-            'USER': DB_USER,
-            'PASSWORD': DB_PASSWORD,
-            'HOST': DB_HOST,
-            'PORT': DB_PORT,
-            'OPTIONS': {
-                'charset': 'utf8mb4',
-                'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
+# Support pour dj-database-url (Railway, Heroku, etc.)
+# Utilise DATABASE_URL si disponible, sinon utilise les variables individuelles
+try:
+    import dj_database_url
+    DATABASE_URL = os.getenv('DATABASE_URL')
+    
+    if DATABASE_URL:
+        # Utiliser DATABASE_URL (priorité pour Railway, Heroku, etc.)
+        DATABASES = {
+            'default': dj_database_url.config(
+                default=DATABASE_URL,
+                conn_max_age=600,
+                conn_health_checks=True,
+            )
+        }
+        # Forcer UTF-8 pour PostgreSQL
+        if DATABASES['default']['ENGINE'] == 'django.db.backends.postgresql':
+            DATABASES['default'].setdefault('OPTIONS', {})
+            DATABASES['default']['OPTIONS']['options'] = '-c client_encoding=UTF8'
+    else:
+        # Fallback: utiliser les variables d'environnement individuelles
+        DB_ENGINE = os.getenv('DB_ENGINE', 'postgresql').lower()
+        DB_NAME = os.getenv('DB_NAME') or os.getenv('POSTGRES_DB') or os.getenv('MYSQL_DB', 'soutenance2')
+        DB_USER = os.getenv('DB_USER') or os.getenv('POSTGRES_USER') or os.getenv('MYSQL_USER', 'postgres')
+        DB_PASSWORD = (
+            os.getenv('DB_PASSWORD') or 
+            os.getenv('POSTGRES_PASSWORD') or 
+            os.getenv('MYSQL_PASSWORD') or 
+            ''
+        )
+        DB_HOST = os.getenv('DB_HOST') or os.getenv('POSTGRES_HOST') or os.getenv('MYSQL_HOST', 'localhost')
+        DB_PORT = os.getenv('DB_PORT') or os.getenv('POSTGRES_PORT') or os.getenv('MYSQL_PORT', '3306' if DB_ENGINE == 'mysql' else '5432')
+        
+        if DB_ENGINE == 'mysql':
+            # Configuration MySQL/MariaDB
+            DATABASES = {
+                'default': {
+                    'ENGINE': 'django.db.backends.mysql',
+                    'NAME': DB_NAME,
+                    'USER': DB_USER,
+                    'PASSWORD': DB_PASSWORD,
+                    'HOST': DB_HOST,
+                    'PORT': DB_PORT,
+                    'OPTIONS': {
+                        'charset': 'utf8mb4',
+                        'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
+                    },
+                }
+            }
+        else:
+            # Configuration PostgreSQL (par défaut)
+            DATABASES = {
+                'default': {
+                    'ENGINE': 'django.db.backends.postgresql',
+                    'NAME': DB_NAME,
+                    'USER': DB_USER,
+                    'PASSWORD': DB_PASSWORD,
+                    'HOST': DB_HOST,
+                    'PORT': DB_PORT,
+                    'OPTIONS': {
+                        # Force UTF-8 client encoding for the DB session
+                        'options': '-c client_encoding=UTF8',
+                    },
+                },
+            }
+except ImportError:
+    # Fallback si dj-database-url n'est pas installé
+    DB_ENGINE = os.getenv('DB_ENGINE', 'postgresql').lower()
+    DB_NAME = os.getenv('DB_NAME') or os.getenv('POSTGRES_DB') or os.getenv('MYSQL_DB', 'soutenance2')
+    DB_USER = os.getenv('DB_USER') or os.getenv('POSTGRES_USER') or os.getenv('MYSQL_USER', 'postgres')
+    DB_PASSWORD = (
+        os.getenv('DB_PASSWORD') or 
+        os.getenv('POSTGRES_PASSWORD') or 
+        os.getenv('MYSQL_PASSWORD') or 
+        ''
+    )
+    DB_HOST = os.getenv('DB_HOST') or os.getenv('POSTGRES_HOST') or os.getenv('MYSQL_HOST', 'localhost')
+    DB_PORT = os.getenv('DB_PORT') or os.getenv('POSTGRES_PORT') or os.getenv('MYSQL_PORT', '3306' if DB_ENGINE == 'mysql' else '5432')
+    
+    if DB_ENGINE == 'mysql':
+        DATABASES = {
+            'default': {
+                'ENGINE': 'django.db.backends.mysql',
+                'NAME': DB_NAME,
+                'USER': DB_USER,
+                'PASSWORD': DB_PASSWORD,
+                'HOST': DB_HOST,
+                'PORT': DB_PORT,
+                'OPTIONS': {
+                    'charset': 'utf8mb4',
+                    'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
+                },
+            }
+        }
+    else:
+        DATABASES = {
+            'default': {
+                'ENGINE': 'django.db.backends.postgresql',
+                'NAME': DB_NAME,
+                'USER': DB_USER,
+                'PASSWORD': DB_PASSWORD,
+                'HOST': DB_HOST,
+                'PORT': DB_PORT,
+                'OPTIONS': {
+                    'options': '-c client_encoding=UTF8',
+                },
             },
         }
-    }
-else:
-    # Configuration PostgreSQL (par défaut)
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': DB_NAME,
-            'USER': DB_USER,
-            'PASSWORD': DB_PASSWORD,
-            'HOST': DB_HOST,
-            'PORT': DB_PORT,
-            'OPTIONS': {
-                # Force UTF-8 client encoding for the DB session
-                'options': '-c client_encoding=UTF8',
-            },
-        },
-    }
 
 # Admin URL paramétrable (obfuscation basique en prod)
 ADMIN_URL = os.getenv('DJANGO_ADMIN_URL', 'admin/')
@@ -312,7 +373,11 @@ if not ADMIN_URL.endswith('/'):
 
 # En production, exiger des identifiants sûrs et sécuriser la connexion DB
 if not DEBUG:
-    if not DB_PASSWORD:
+    # Vérifier si on utilise DATABASE_URL ou des variables individuelles
+    using_database_url = bool(os.getenv('DATABASE_URL'))
+    db_password = DATABASES['default'].get('PASSWORD', '') if not using_database_url else None
+    
+    if not using_database_url and not db_password:
         # Déterminer le nom de la variable d'environnement attendue selon le type de DB
         if DB_ENGINE == 'mysql':
             expected_var = 'DB_PASSWORD ou MYSQL_PASSWORD'
