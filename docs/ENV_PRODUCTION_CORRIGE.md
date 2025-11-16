@@ -2,10 +2,13 @@
 
 ## 🔧 Corrections apportées
 
-1. ✅ **BACKEND_URL** : Changé de `https://ftp.navixtechnology.com` vers `https://comparateurdeprix.com` (pour éviter l'erreur SSL)
-2. ✅ **CORS_ALLOWED_ORIGINS** : Suppression de la duplication, consolidation en une seule ligne complète
-3. ✅ **Nettoyage** : Suppression des lignes dupliquées
-4. ✅ **Optimisation** : Organisation et commentaires améliorés
+1. ✅ **BACKEND_URL** : Mis à jour pour Railway (`comparateurdeprix.up.railway.app`)
+2. ✅ **DJANGO_ALLOWED_HOSTS** : Ajout du domaine Railway
+3. ✅ **CSRF_TRUSTED_ORIGINS** : Ajout du domaine Railway
+4. ✅ **SITE_URL** : Mis à jour pour Railway
+5. ✅ **CORS_ALLOWED_ORIGINS** : Suppression de la duplication, consolidation en une seule ligne complète
+6. ✅ **Nettoyage** : Suppression des lignes dupliquées
+7. ✅ **Optimisation** : Organisation et commentaires améliorés
 
 ---
 
@@ -18,10 +21,10 @@
 # En production: définissez OBLIGATOIREMENT DJANGO_SECRET_KEY (valeur forte et secrète)
 DJANGO_SECRET_KEY=TmbjAfKjFXpor5UXwUbTN4Sna_JbwoXxwb_Clkgtv_ktJH2IOfhvMoAdfClV4eKiZKI
 DJANGO_DEBUG=False
-DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,comparateurdeprix.com,www.comparateurdeprix.com
+DJANGO_ALLOWED_HOSTS=comparateurdeprix.up.railway.app,*.railway.app,comparateurdeprix.com,www.comparateurdeprix.com,localhost,127.0.0.1
 
 # CSRF Protection
-CSRF_TRUSTED_ORIGINS=https://comparateurdeprix.com,https://www.comparateurdeprix.com,http://localhost:8000,http://127.0.0.1:8000,http://localhost:8001,http://127.0.0.1:8001
+CSRF_TRUSTED_ORIGINS=https://comparateurdeprix.up.railway.app,https://comparateurdeprix.com,https://www.comparateurdeprix.com,http://localhost:8000,http://127.0.0.1:8000,http://localhost:8001,http://127.0.0.1:8001
 
 # CORS Configuration
 CORS_ALLOW_ALL_ORIGINS=False
@@ -43,7 +46,7 @@ DB_PORT=3306
 USE_JWT_AUTH=true
 JWT_ACCESS_MIN=15
 JWT_REFRESH_DAYS=7
-SITE_URL=https://comparateurdeprix.com
+SITE_URL=https://comparateurdeprix.up.railway.app
 PUBLIC_BASE_URL=https://comparateurdeprix.com
 
 # Algorithme de signature JWT
@@ -79,7 +82,7 @@ DRF_THROTTLE_USER=1000/min
 # FRONTEND/BACKEND URLs
 # ============================================
 FRONTEND_URL=https://comparateurdeprix.com
-BACKEND_URL=https://comparateurdeprix.com
+BACKEND_URL=https://comparateurdeprix.up.railway.app
 PUBLIC_BASE_URL=https://comparateurdeprix.com
 
 # ============================================
@@ -180,10 +183,10 @@ RECO_INIT_MODELS_ON_STARTUP=False
 
 ## 🔄 Changements principaux
 
-### 1. BACKEND_URL corrigé
+### 1. BACKEND_URL mis à jour pour Railway
 ```diff
 - BACKEND_URL=https://ftp.navixtechnology.com
-+ BACKEND_URL=https://comparateurdeprix.com
++ BACKEND_URL=https://comparateurdeprix.up.railway.app
 ```
 
 ### 2. CORS_ALLOWED_ORIGINS consolidé
@@ -193,17 +196,17 @@ RECO_INIT_MODELS_ON_STARTUP=False
 + CORS_ALLOWED_ORIGINS=https://comparateurdeprix.com,https://www.comparateurdeprix.com,http://localhost:3000,http://127.0.0.1:3000
 ```
 
-### 3. DJANGO_ALLOWED_HOSTS simplifié
+### 3. DJANGO_ALLOWED_HOSTS mis à jour pour Railway
 ```diff
 - DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,ftp.navixtechnology.com,www.ftp.navixtechnology.com,comparateurdeprix.com,www.comparateurdeprix.com
-+ DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,comparateurdeprix.com,www.comparateurdeprix.com
++ DJANGO_ALLOWED_HOSTS=comparateurdeprix.up.railway.app,*.railway.app,comparateurdeprix.com,www.comparateurdeprix.com,localhost,127.0.0.1
 ```
-*(Vous pouvez garder ftp.navixtechnology.com si vous en avez besoin, mais il n'est plus nécessaire pour le backend)*
+*(Inclut maintenant le domaine Railway : comparateurdeprix.up.railway.app)*
 
-### 4. CSRF_TRUSTED_ORIGINS simplifié
+### 4. CSRF_TRUSTED_ORIGINS mis à jour pour Railway
 ```diff
 - CSRF_TRUSTED_ORIGINS=https://ftp.navixtechnology.com,http://ftp.navixtechnology.com,https://www.ftp.navixtechnology.com,http://www.ftp.navixtechnology.com,https://comparateurdeprix.com,https://www.comparateurdeprix.com,...
-+ CSRF_TRUSTED_ORIGINS=https://comparateurdeprix.com,https://www.comparateurdeprix.com,http://localhost:8000,http://127.0.0.1:8000,http://localhost:8001,http://127.0.0.1:8001
++ CSRF_TRUSTED_ORIGINS=https://comparateurdeprix.up.railway.app,https://comparateurdeprix.com,https://www.comparateurdeprix.com,http://localhost:8000,http://127.0.0.1:8000,http://localhost:8001,http://127.0.0.1:8001
 ```
 
 ---
@@ -235,14 +238,15 @@ python manage.py check --deploy
    - Dans cPanel → **Setup Python App** → **Restart**
 
 6. **Tester** :
-   - `https://comparateurdeprix.com/api/health/`
+   - Railway : `https://comparateurdeprix.up.railway.app/api/health/`
+   - cPanel : `https://comparateurdeprix.com/api/health/`
    - `https://comparateurdeprix.com/api/docs/`
 
 ---
 
 ## ⚠️ Notes importantes
 
-1. **BACKEND_URL** : Maintenant pointé vers `comparateurdeprix.com` au lieu de `ftp.navixtechnology.com` pour éviter l'erreur SSL
+1. **BACKEND_URL** : Maintenant pointé vers `comparateurdeprix.up.railway.app` pour Railway (ou `comparateurdeprix.com` pour cPanel)
 2. **Domaines** : Les références à `ftp.navixtechnology.com` ont été supprimées (sauf si vous en avez vraiment besoin)
 3. **CORS** : Consolidé en une seule ligne complète
 4. **Sécurité** : Tous les domaines de production utilisent HTTPS
