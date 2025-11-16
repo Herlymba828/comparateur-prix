@@ -17,6 +17,7 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
+from django.http import JsonResponse
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 try:
     from rest_framework_simplejwt.views import (
@@ -56,9 +57,27 @@ urlpatterns = [
     path('oauth/', include('social_django.urls', namespace='social')),
 ]
 
-# Racine: Swagger UI seulement en DEBUG
+# Vue pour la racine
+def root_view(request):
+    """Vue pour la racine qui redirige vers la documentation API."""
+    return JsonResponse({
+        'message': 'Comparateur Prix API',
+        'version': '1.0.0',
+        'documentation': '/api/docs/',
+        'health_check': '/api/health/',
+        'endpoints': {
+            'api_docs': '/api/docs/',
+            'api_schema': '/api/schema/',
+            'api_health': '/api/health/',
+            'admin': f'/{settings.ADMIN_URL}',
+        }
+    })
+
+# Racine: Swagger UI en DEBUG, vue JSON en production
 if settings.DEBUG:
-    urlpatterns.insert(1, path('', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui-root'))
+    urlpatterns.insert(0, path('', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui-root'))
+else:
+    urlpatterns.insert(0, path('', root_view, name='root'))
 
 # JWT endpoints (SimpleJWT) seulement si activé
 if getattr(settings, 'USE_JWT_AUTH', False) and TokenObtainPairView and TokenRefreshView:
