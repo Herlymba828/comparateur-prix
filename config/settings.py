@@ -98,6 +98,9 @@ ALLOWED_HOSTS = ['localhost', '127.0.0.1', '192.168.1.67', '192.168.1.65']
 # En production, ajouter les domaines de production
 if not DEBUG:
     ALLOWED_HOSTS.extend([
+        'comparateurdeprix.up.railway.app',
+        'comparateurdeprix.com',
+        'www.comparateurdeprix.com',
         'ftp.navixtechnology.com',
         'www.ftp.navixtechnology.com',
     ])
@@ -113,12 +116,24 @@ for host in essential_hosts:
     if host not in ALLOWED_HOSTS:
         ALLOWED_HOSTS.append(host)
 
-# Garantir que le domaine de production est toujours présent en production
+# Garantir que les domaines de production sont toujours présents en production
 if not DEBUG:
-    production_hosts = ['ftp.navixtechnology.com', 'www.ftp.navixtechnology.com']
+    production_hosts = [
+        'comparateurdeprix.up.railway.app',
+        'comparateurdeprix.com',
+        'www.comparateurdeprix.com',
+        'ftp.navixtechnology.com',
+        'www.ftp.navixtechnology.com',
+    ]
     for host in production_hosts:
         if host not in ALLOWED_HOSTS:
             ALLOWED_HOSTS.append(host)
+    
+    # Ajouter automatiquement les domaines Railway si détectés
+    # Railway peut utiliser différents sous-domaines, donc on vérifie aussi via variable d'env
+    railway_host = os.getenv('RAILWAY_PUBLIC_DOMAIN') or os.getenv('RAILWAY_DOMAIN')
+    if railway_host and railway_host not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(railway_host)
 
 # Utiliser le modèle utilisateur personnalisé
 AUTH_USER_MODEL = 'utilisateurs.Utilisateur'        
@@ -640,6 +655,7 @@ CORS_ALLOW_ALL_ORIGINS = DEBUG  # Autoriser toutes les origines en développemen
 
 # Origines autorisées en production
 CORS_ALLOWED_ORIGINS = [
+    "https://comparateurdeprix.up.railway.app",
     "https://comparateurdeprix.com",
     "https://www.comparateurdeprix.com",
     "https://ftp.navixtechnology.com",
@@ -666,6 +682,7 @@ if DEBUG:
 # Optional: trust proxies and CSRF origins if served behind reverse proxy
 # Configuration CSRF
 CSRF_TRUSTED_ORIGINS = [
+    'https://comparateurdeprix.up.railway.app',
     'https://comparateurdeprix.com',
     'https://www.comparateurdeprix.com',
     'https://ftp.navixtechnology.com',
