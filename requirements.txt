@@ -13,7 +13,9 @@ scikit-learn==1.3.2
 python-dotenv==1.0.0
 dj-database-url==2.1.0
 psycopg[binary]==3.2.1
-mysqlclient==2.2.0
+# mysqlclient nécessite des bibliothèques système MySQL (non disponible sur Railway)
+# Utilisez PyMySQL à la place si vous avez besoin de MySQL
+# mysqlclient==2.2.0  # Décommentez seulement si vous avez les dépendances système
 PyMySQL==1.1.0
 django-cors-headers==4.3.1
 django-redis==5.4.0

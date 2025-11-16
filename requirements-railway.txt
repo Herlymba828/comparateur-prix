@@ -1,0 +1,8 @@
+# Requirements pour Railway (PostgreSQL uniquement)
+# Utilisez ce fichier si vous déployez uniquement sur Railway avec PostgreSQL
+
+-r requirements.txt
+
+# Exclure mysqlclient qui nécessite des dépendances système
+# Railway utilise PostgreSQL via DATABASE_URL, donc mysqlclient n'est pas nécessaire
+
