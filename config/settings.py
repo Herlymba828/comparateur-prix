@@ -123,7 +123,7 @@ ALLOWED_HOSTS = ['localhost', '127.0.0.1', '192.168.1.67', '192.168.1.65']
 # En production, ajouter les domaines de production
 if not DEBUG:
     ALLOWED_HOSTS.extend([
-        'comparateurdeprix.up.railway.app',
+        'comparo.up.railway.app',
         'comparateurdeprix.com',
         'www.comparateurdeprix.com',
         'ftp.navixtechnology.com',
@@ -144,7 +144,7 @@ for host in essential_hosts:
 # Garantir que les domaines de production sont toujours présents en production
 if not DEBUG:
     production_hosts = [
-        'comparateurdeprix.up.railway.app',
+        'comparo.up.railway.app',
         'comparateurdeprix.com',
         'www.comparateurdeprix.com',
         'ftp.navixtechnology.com',
@@ -684,7 +684,7 @@ CORS_ALLOW_ALL_ORIGINS = DEBUG  # Autoriser toutes les origines en développemen
 
 # Origines autorisées en production
 CORS_ALLOWED_ORIGINS = [
-    "https://comparateurdeprix.up.railway.app",
+    "https://comparo.up.railway.app",
     "https://comparateurdeprix.com",
     "https://www.comparateurdeprix.com",
     "https://ftp.navixtechnology.com",
@@ -711,7 +711,7 @@ if DEBUG:
 # Optional: trust proxies and CSRF origins if served behind reverse proxy
 # Configuration CSRF
 CSRF_TRUSTED_ORIGINS = [
-    'https://comparateurdeprix.up.railway.app',
+    'https://comparo.up.railway.app',
     'https://comparateurdeprix.com',
     'https://www.comparateurdeprix.com',
     'https://ftp.navixtechnology.com',
