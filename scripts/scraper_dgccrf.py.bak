@@ -1,538 +1,135 @@
 #!/usr/bin/env python
-"""Scraper pour récupérer les données de prix de la DGCCRF.
-
-Ce module fournit des fonctionnalités pour extraire les données de prix
-à partir du site de la DGCCRF avec gestion des erreurs et des reprises.
-"""
-
-import argparse
-import hashlib
-import json
-import logging
 import os
-import pathlib
 import re
-import socket
-import sys
 import time
-from datetime import datetime, timezone
-from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
-from urllib.parse import urljoin, urlparse
+import json
+import argparse
+import logging
+import hashlib
+import pathlib
+from typing import Iterator, Dict, Any, List, Optional, Tuple
+from urllib.parse import urljoin
 
 import requests
+from requests.exceptions import RequestException
+from bs4 import BeautifulSoup
 import urllib.robotparser as robotparser
-from bs4 import BeautifulSoup, element
-from requests.exceptions import (
-    RequestException, Timeout, HTTPError, ConnectionError, SSLError
-)
+from datetime import datetime, timezone
 
-# Import de la configuration
-from .config import (
-    DEFAULT_BASE_URL, DEFAULT_USER_AGENT, REQUEST_DELAY_SEC, REQUEST_TIMEOUT,
-    MAX_RETRIES, BACKOFF_SEC, HTTP_PROXY, LOG_FILE, STATE_FILE, CHECKPOINT_PATH,
-    RAW_DIR, DEFAULT_REPORT_OUT, SAVE_TO_DB, RESPECT_ROBOTS, SKIP_UNCHANGED,
-    PRIX_HOMOLOGUE_URL, LISTE_PRODUIT_URL, PRODUIT_PETROLIER_URL,
-    OFF_ENABLE, OFF_TIMEOUT, OFF_MIN_SCORE
-)
-
-DEFAULT_BASE_URL = os.getenv(
-    'DGCCRF_BASE_URL', 'https://www.dgccrf.ga/'
-)
-DEFAULT_USER_AGENT = os.getenv(
-    'DGCCRF_USER_AGENT',
-    'ComparateurPrixBot/1.0 (+contact@example.com)'
-)
-# Délai entre les requêtes en secondes
-REQUEST_DELAY_SEC = float(os.getenv('DGCCRF_REQUEST_DELAY', '1.0'))
+DEFAULT_BASE_URL = os.getenv('DGCCRF_BASE_URL', 'https://www.dgccrf.ga/')
+DEFAULT_USER_AGENT = os.getenv('DGCCRF_USER_AGENT', 'ComparateurPrixBot/1.0 (+contact@example.com)')
+REQUEST_DELAY_SEC = float(os.getenv('DGCCRF_REQUEST_DELAY', '1.0'))  # throttle between requests
 REQUEST_TIMEOUT = float(os.getenv('DGCCRF_TIMEOUT', '30'))
 MAX_RETRIES = int(os.getenv('DGCCRF_MAX_RETRIES', '3'))
 BACKOFF_SEC = float(os.getenv('DGCCRF_BACKOFF', '1.5'))
 HTTP_PROXY = os.getenv('DGCCRF_PROXY', '')
 LOG_FILE = os.getenv('DGCCRF_LOG_FILE', '')
 STATE_FILE = os.getenv('DGCCRF_STATE_FILE', '.dgccrf_state.json')
-CHECKPOINT_PATH = os.getenv(
-    'DGCCRF_CHECKPOINT_PATH', '.dgccrf_checkpoint.json'
-)
+CHECKPOINT_PATH = os.getenv('DGCCRF_CHECKPOINT_PATH', '.dgccrf_checkpoint.json')
 SAVE_TO_DB = os.getenv('DGCCRF_SAVE_TO_DB', 'true').lower() == 'true'
-PRIX_HOMOLOGUE_URL = os.getenv(
-    'DGCCRF_PRIX_HOMOLOGUE_URL',
-    'https://www.dgccrf.ga/echo-prix-homologue'
-)
-LISTE_PRODUIT_URL = os.getenv(
-    'DGCCRF_LISTE_PRODUIT_URL',
-    'https://www.dgccrf.ga/echo-liste-produit'
-)
-PRODUIT_PETROLIER_URL = os.getenv(
-    'DGCCRF_PRODUIT_PETROLIER_URL',
-    'https://www.dgccrf.ga/echo-produit-petrolier'
-)
+PRIX_HOMOLOGUE_URL = os.getenv('DGCCRF_PRIX_HOMOLOGUE_URL', 'https://www.dgccrf.ga/echo-prix-homologue')
+LISTE_PRODUIT_URL = os.getenv('DGCCRF_LISTE_PRODUIT_URL', 'https://www.dgccrf.ga/echo-liste-produit')
+PRODUIT_PETROLIER_URL = os.getenv('DGCCRF_PRODUIT_PETROLIER_URL', 'https://www.dgccrf.ga/echo-produit-petrolier')
 RESPECT_ROBOTS = os.getenv('DGCCRF_RESPECT_ROBOTS', 'true').lower() == 'true'
 RAW_DIR = os.getenv('DGCCRF_RAW_DIR', '')
-DEFAULT_REPORT_OUT = os.getenv(
-    'DGCCRF_REPORT_OUT',
-    'data/dgccrf_report.json'
-)
-SKIP_UNCHANGED = os.getenv(
-    'DGCCRF_SKIP_UNCHANGED', 'false'
-).lower() == 'true'
+DEFAULT_REPORT_OUT = os.getenv('DGCCRF_REPORT_OUT', 'data/dgccrf_report.json')
+SKIP_UNCHANGED = os.getenv('DGCCRF_SKIP_UNCHANGED', 'false').lower() == 'true'
 OFF_ENABLE = os.getenv('DGCCRF_OFF_ENABLE', 'false').lower() == 'true'
 OFF_TIMEOUT = float(os.getenv('DGCCRF_OFF_TIMEOUT', '5'))
 OFF_MIN_SCORE = float(os.getenv('DGCCRF_OFF_MIN_SCORE', '0.6'))
 
-def setup_logging(debug: bool = False) -> logging.Logger:
-    """Configure le système de journalisation.
-    
-    Args:
-        debug: Si True, active le mode débogage (niveau DEBUG)
-        
-    Returns:
-        Logger: L'instance du logger configuré
-    """
-    logger = logging.getLogger('dgccrf_scraper')
-    
-    # Éviter de reconfigurer un logger existant
-    if logger.handlers:
-        return logger
-    
-    # Niveau de journalisation
-    log_level = logging.DEBUG if debug else logging.INFO
-    logger.setLevel(log_level)
-    
-    # Format des messages
-    formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
-    
-    # Handler pour la console (sortie standard)
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(formatter)
-    console_handler.setLevel(log_level)
-    logger.addHandler(console_handler)
-    
-    # Handler pour le fichier de log si spécifié
+logger = logging.getLogger('dgccrf_scraper')
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter('[%(levelname)s] %(asctime)s %(name)s: %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
     if LOG_FILE:
         try:
-            # Créer le répertoire de logs si nécessaire
+            # Créer le répertoire si nécessaire
             log_dir = os.path.dirname(LOG_FILE)
             if log_dir and not os.path.exists(log_dir):
                 os.makedirs(log_dir, exist_ok=True)
-                
-            # Configurer le handler de fichier
             file_handler = logging.FileHandler(LOG_FILE, encoding='utf-8')
             file_handler.setFormatter(formatter)
-            file_handler.setLevel(log_level)
             logger.addHandler(file_handler)
-            
-            logger.info("Journalisation vers %s activée (niveau: %s)", 
-                       os.path.abspath(LOG_FILE), 
-                       logging.getLevelName(log_level))
-            
-        except (OSError, IOError) as e:
-            logger.error("Impossible de configurer le fichier de log %s: %s", 
-                        LOG_FILE, str(e), exc_info=True)
-        except Exception as e:
-            logger.critical("Erreur critique lors de la configuration des logs: %s", 
-                          str(e), exc_info=True)
-    
-    # Configuration des logs pour les bibliothèques tierces
-    logging.getLogger('requests').setLevel(logging.WARNING)
-    logging.getLogger('urllib3').setLevel(logging.WARNING)
-    logging.getLogger('bs4').setLevel(logging.WARNING)
-    
-    return logger
-
-# Initialisation du logger global
-logger = setup_logging(debug=os.getenv('DEBUG', '').lower() == 'true')
-
-class ScraperError(Exception):
-    """Exception de base pour les erreurs du scraper."""
-    pass
-
-class RequestError(ScraperError):
-    """Erreur lors d'une requête HTTP."""
-    pass
-
-class ParserError(ScraperError):
-    """Erreur lors de l'analyse du contenu HTML/JSON."""
-    pass
-
-class ValidationError(ScraperError):
-    """Erreur de validation des données."""
-    pass
+        except Exception as exc:
+            # Si on ne peut pas créer le fichier de log, continuer sans
+            # Utiliser print car logger n'est pas encore complètement configuré
+            print(f"[WARNING] Impossible de créer le fichier de log {LOG_FILE}: {exc}")
+logger.setLevel(logging.INFO)
 
 
 class DgccrfScraper:
-    """Scraper pour récupérer les prix homologués DGCCRF/EDIG.
-    
-    Ce scraper est conçu pour être robuste, respectueux et configurable.
-    Il gère automatiquement les erreurs réseau, les timeouts et le respect de robots.txt.
-    
-    Args:
-        base_url: URL de base du site à scraper
-        user_agent: User-Agent à utiliser pour les requêtes
-        request_delay: Délai entre les requêtes en secondes
-        timeout: Timeout des requêtes en secondes
-        max_retries: Nombre maximum de tentatives en cas d'échec
-        backoff: Facteur de backoff exponentiel entre les tentatives
-        
-    Attributes:
-        session (requests.Session): Session HTTP réutilisable
-        logger (logging.Logger): Logger pour la journalisation
+    """Scraper basique et respectueux pour récupérer les prix homologués DGCCRF/EDIG.
+
+    Le site/source exacte devra être adaptée: ce scraper prévoit un endpoint JSON/CSV.
+    Configurez:
+      - DGCCRF_BASE_URL (base URL)
+      - DGCCRF_USER_AGENT (User-Agent explicite)
+      - DGCCRF_REQUEST_DELAY (throttle en secondes)
     """
 
-    def __init__(
-        self, 
-        base_url: Optional[str] = None, 
-        user_agent: Optional[str] = None, 
-        request_delay: Optional[float] = None, 
-        timeout: Optional[float] = None,
-        max_retries: Optional[int] = None,
-        backoff: Optional[float] = None
-    ):
-        # Configuration
+    def __init__(self, base_url: Optional[str] = None, user_agent: Optional[str] = None, request_delay: Optional[float] = None, timeout: Optional[float] = None):
         self.base_url = base_url or DEFAULT_BASE_URL
         self.user_agent = user_agent or DEFAULT_USER_AGENT
         self.request_delay = request_delay if request_delay is not None else REQUEST_DELAY_SEC
-        self.timeout = timeout if timeout is not None else REQUEST_TIMEOUT
-        self.max_retries = max_retries if max_retries is not None else MAX_RETRIES
-        self.backoff = backoff if backoff is not None else BACKOFF_SEC
-        
-        # Configuration du logger
-        self.logger = logging.getLogger(f'{__name__}.DgccrfScraper')
-        self.logger.debug("Initialisation du scraper avec base_url=%s", self.base_url)
-        
-        # Configuration de la session HTTP
-        self._setup_session()
-    
-    def _setup_session(self) -> None:
-        """Configure la session HTTP avec les en-têtes et les paramètres nécessaires."""
-        try:
-            self.session = requests.Session()
-            
-            # En-têtes par défaut
-            self.session.headers.update({
-                'User-Agent': self.user_agent,
-                'Accept': 'application/json, text/html, text/plain, */*',
-                'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
-                'Connection': 'keep-alive',
+        self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': self.user_agent,
+            'Accept': 'application/json, text/csv, text/plain, */*'
+        })
+        if HTTP_PROXY:
+            self.session.proxies.update({
+                'http': HTTP_PROXY,
+                'https': HTTP_PROXY,
             })
-            
-            # Configuration du proxy si spécifié
-            if HTTP_PROXY:
-                self.logger.debug("Utilisation du proxy: %s", HTTP_PROXY)
-                self.session.proxies.update({
-                    'http': HTTP_PROXY,
-                    'https': HTTP_PROXY,
-                })
-                
-            # Configuration des nouvelles tentatives avec backoff
-            retry_strategy = requests.adapters.HTTPAdapter(
-                max_retries=3,
-                backoff_factor=0.5,
-                status_forcelist=[429, 500, 502, 503, 504]
-            )
-            self.session.mount("http://", retry_strategy)
-            self.session.mount("https://", retry_strategy)
-            
-            self.logger.debug("Session HTTP configurée avec succès")
-            
-        except Exception as e:
-            self.logger.critical("Échec de la configuration de la session: %s", str(e), exc_info=True)
-            raise RequestError("Impossible de configurer la session HTTP") from e
+        self.timeout = timeout if timeout is not None else REQUEST_TIMEOUT
 
-    def _get(self, path: str, **kwargs) -> requests.Response:
-        """Effectue une requête GET relative à l'URL de base.
-        
-        Args:
-            path: Chemin relatif à l'URL de base
-            **kwargs: Arguments supplémentaires pour la requête
-            
-        Returns:
-            Response: La réponse HTTP
-            
-        Raises:
-            RequestError: Si la requête échoue après plusieurs tentatives
-        """
+    def _get(self, path: str) -> requests.Response:
         url = urljoin(self.base_url, path)
-        return self._request_with_retry('GET', url, **kwargs)
+        return self._request_with_retry(url)
 
-    def _get_absolute(self, url: str, **kwargs) -> requests.Response:
-        """Effectue une requête GET vers une URL absolue.
-        
-        Args:
-            url: URL complète à interroger
-            **kwargs: Arguments supplémentaires pour la requête
-            
-        Returns:
-            Response: La réponse HTTP
-            
-        Raises:
-            RequestError: Si la requête échoue après plusieurs tentatives
-        """
-        return self._request_with_retry('GET', url, **kwargs)
+    def _get_absolute(self, url: str) -> requests.Response:
+        return self._request_with_retry(url)
 
-    def _post(self, path: str, data: Optional[Dict] = None, **kwargs) -> requests.Response:
-        """Effectue une requête POST relative à l'URL de base.
-        
-        Args:
-            path: Chemin relatif à l'URL de base
-            data: Données à envoyer dans le corps de la requête
-            **kwargs: Arguments supplémentaires pour la requête
-            
-        Returns:
-            Response: La réponse HTTP
-            
-        Raises:
-            RequestError: Si la requête échoue après plusieurs tentatives
-        """
-        url = urljoin(self.base_url, path)
-        return self._request_with_retry('POST', url, data=data, **kwargs)
-
-    def _request_with_retry(
-        self, 
-        method: str, 
-        url: str, 
-        **kwargs
-    ) -> requests.Response:
-        """Effectue une requête HTTP avec mécanisme de réessai et backoff exponentiel.
-        
-        Args:
-            method: Méthode HTTP (GET, POST, etc.)
-            url: URL complète à interroger
-            **kwargs: Arguments supplémentaires pour la requête
-            
-        Returns:
-            Response: La réponse HTTP
-            
-        Raises:
-            RequestError: Si la requête échoue après plusieurs tentatives
-            ValueError: Si l'URL est invalide
-        """
-        # Validation de l'URL
-        if not url or not isinstance(url, str):
-            raise ValueError("URL invalide fournie à _request_with_retry")
-            
+    def _request_with_retry(self, url: str) -> requests.Response:
         attempt = 0
         last_exc: Optional[Exception] = None
-        
-        # Configuration des en-têtes par défaut si non spécifiés
-        headers = kwargs.pop('headers', {})
-        headers.setdefault('Accept', 'application/json, text/html, */*')
-        
-        # Configuration du timeout si non spécifié
-        if 'timeout' not in kwargs:
-            kwargs['timeout'] = self.timeout
-            
-        self.logger.debug("Préparation de la requête %s %s (timeout=%.1fs)", 
-                         method, url, kwargs.get('timeout', self.timeout))
-        
-        while attempt < self.max_retries:
+        while attempt < MAX_RETRIES:
             try:
-                # Journalisation de la tentative
-                self.logger.info("%s %s (essai %d/%d)", 
-                               method, url, attempt + 1, self.max_retries)
-                
-                # Exécution de la requête
-                resp = self.session.request(
-                    method=method,
-                    url=url,
-                    headers=headers,
-                    **kwargs
-                )
-                
-                # Vérification du code de statut HTTP
+                logger.info(f"GET {url} (try {attempt+1}/{MAX_RETRIES})")
+                resp = self.session.get(url, timeout=self.timeout)
+                time.sleep(self.request_delay)
                 resp.raise_for_status()
-                
-                # Journalisation du succès
-                self.logger.debug("Réponse %d de %s %s (taille: %d octets)",
-                                resp.status_code, method, url, len(resp.content))
-                
-                # Sauvegarde de la réponse brute si nécessaire
-                self._save_raw_response(url, resp.text)
-                
-                # Délai entre les requêtes pour être respectueux
-                if self.request_delay > 0:
-                    time.sleep(self.request_delay)
-                
+                # Sauvegarder brut pour audit si demandé
+                if RAW_DIR:
+                    try:
+                        os.makedirs(RAW_DIR, exist_ok=True)
+                        safe = hashlib.sha1(url.encode('utf-8')).hexdigest()
+                        ts = int(time.time())
+                        p = pathlib.Path(RAW_DIR) / f"{ts}_{safe}.html"
+                        p.write_text(resp.text, encoding='utf-8')
+                    except Exception:
+                        pass
                 return resp
-                
-            except requests.exceptions.Timeout as e:
-                last_exc = e
-                self.logger.warning("Timeout sur %s %s: %s", method, url, str(e))
-                
-            except requests.exceptions.HTTPError as e:
-                # Pour les erreurs 4xx (sauf 429), on ne réessaie pas
-                if hasattr(e.response, 'status_code') and 400 <= e.response.status_code < 500 \
-                   and e.response.status_code != 429:
-                    self.logger.error("Erreur client %d sur %s %s: %s", 
-                                    e.response.status_code, method, url, str(e))
-                    raise RequestError(
-                        f"Erreur {e.response.status_code} sur {method} {url}"
-                    ) from e
-                last_exc = e
-                self.logger.warning("Erreur HTTP %d sur %s %s: %s", 
-                                  e.response.status_code if hasattr(e, 'response') else '?',
-                                  method, url, str(e))
-                
-            except (requests.exceptions.ConnectionError, 
-                   requests.exceptions.SSLError) as e:
-                last_exc = e
-                self.logger.warning("Erreur de connexion sur %s %s: %s", 
-                                  method, url, str(e))
-                
-            except requests.exceptions.RequestException as e:
-                last_exc = e
-                self.logger.warning("Erreur de requête sur %s %s: %s", 
-                                  method, url, str(e), exc_info=True)
-            
-            # Calcul du délai avant la prochaine tentative (backoff exponentiel)
-            attempt += 1
-            if attempt < self.max_retries:
-                sleep_time = self.backoff * (2 ** (attempt - 1))
-                self.logger.info("Nouvelle tentative dans %.1f secondes...", sleep_time)
-                time.sleep(sleep_time)
-        
-        # Si on arrive ici, toutes les tentatives ont échoué
-        error_msg = (
-            f"Échec après {self.max_retries} tentatives sur {method} {url}"
-        )
-        self.logger.error(error_msg)
-        raise RequestError(error_msg) from last_exc
-        
-    def _save_raw_response(self, url: str, content: str) -> None:
-        """Sauvegarde la réponse brute pour audit si demandé.
-        
-        Args:
-            url: URL de la requête
-            content: Contenu de la réponse à sauvegarder
-            
-        Note:
-            Le fichier est enregistré dans le format: 
-            {RAW_DIR}/{timestamp}_{hash_url}.{ext}
-            
-            Les types de contenu supportés sont:
-            - JSON (extension .json)
-            - HTML (extension .html)
-            - Autres (extension .txt)
-        """
-        if not RAW_DIR or not content:
-            return
-            
-        try:
-            # Création du répertoire de destination si nécessaire
-            raw_dir = pathlib.Path(RAW_DIR)
-            raw_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Génération d'un nom de fichier sécurisé
-            timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
-            url_hash = hashlib.sha256(url.encode('utf-8')).hexdigest()[:8]
-            
-            # Détermination de l'extension en fonction du contenu
-            content = content.strip()
-            content_type = 'txt'  # Par défaut
-            
-            if content.startswith('{') or content.startswith('['):
-                content_type = 'json'
-            elif '<!' in content and 'html' in content.lower():
-                content_type = 'html'
-                
-            filename = f"{timestamp}_{url_hash}.{content_type}"
-            filepath = raw_dir / filename
-            
-            # Écriture du contenu dans le fichier
-            with open(filepath, 'w', encoding='utf-8') as f:
-                f.write(content)
-                
-            self.logger.debug("Réponse brute enregistrée: %s (%d octets)", 
-                            filepath, len(content))
-            
-        except OSError as e:
-            self.logger.error("Impossible de sauvegarder la réponse brute: %s", 
-                            str(e), exc_info=True)
-        except Exception as e:
-            self.logger.error("Erreur inattendue lors de la sauvegarde: %s", 
-                            str(e), exc_info=True)
+            except RequestException as exc:
+                last_exc = exc
+                sleep_for = BACKOFF_SEC * (2 ** attempt)
+                logger.warning(f"Erreur requête: {exc}. Backoff {sleep_for:.1f}s")
+                time.sleep(sleep_for)
+                attempt += 1
+        raise last_exc or RuntimeError("Échec de requête après retries")
 
     def _is_allowed_by_robots(self, url: str) -> bool:
-        """Vérifie si le robot est autorisé à accéder à l'URL selon robots.txt.
-        
-        Cette méthode respecte le paramètre RESPECT_ROBOTS et gère les erreurs
-        de manière élégante en retournant True par défaut en cas de problème.
-        
-        Args:
-            url: L'URL à vérifier (doit être une URL absolue)
-            
-        Returns:
-            bool: 
-                - True si l'accès est autorisé ou en cas d'erreur
-                - False si l'accès est explicitement interdit
-                
-        Note:
-            En cas d'erreur (fichier robots.txt inaccessible, timeout, etc.),
-            la méthode retourne True par défaut pour ne pas bloquer le scraping.
-        """
-        # Si on ne respecte pas robots.txt, on autorise tout
         if not RESPECT_ROBOTS:
-            self.logger.debug("Respect de robots.txt désactivé")
             return True
-            
-        # Vérification de l'URL
-        if not url or not isinstance(url, str):
-            self.logger.warning("URL invalide fournie à _is_allowed_by_robots")
-            return True
-            
         try:
-            # Construction de l'URL de robots.txt
-            parsed_url = urlparse(url)
-            robots_url = f"{parsed_url.scheme}://{parsed_url.netloc}/robots.txt"
-            
-            self.logger.debug("Vérification de l'accès via robots.txt pour %s", url)
-            
-            # Utilisation d'une session avec timeout court
-            with requests.Session() as session:
-                # Configuration d'un timeout court pour éviter les blocages
-                session.timeout = 10
-                session.headers = {'User-Agent': self.user_agent}
-                
-                try:
-                    # Téléchargement de robots.txt
-                    resp = session.get(robots_url)
-                    resp.raise_for_status()
-                    
-                    # Parsing du fichier robots.txt
-                    rp = robotparser.RobotFileParser()
-                    rp.parse(resp.text.splitlines())
-                    
-                    # Vérification des permissions
-                    is_allowed = rp.can_fetch(self.user_agent, url)
-                    
-                    if not is_allowed:
-                        self.logger.warning("Accès refusé par robots.txt: %s", url)
-                    else:
-                        self.logger.debug("Accès autorisé par robots.txt: %s", url)
-                        
-                    return is_allowed
-                    
-                except requests.exceptions.HTTPError as e:
-                    # Si le fichier robots.txt n'existe pas (404), on autorise
-                    if e.response.status_code == 404:
-                        self.logger.debug("Aucun fichier robots.txt trouvé, accès autorisé")
-                        return True
-                    self.logger.warning("Erreur HTTP lors de la lecture de robots.txt: %s", str(e))
-                    
-                except requests.exceptions.Timeout:
-                    self.logger.warning("Timeout lors de la lecture de robots.txt")
-                    
-                except requests.exceptions.RequestException as e:
-                    self.logger.warning("Erreur de requête pour robots.txt: %s", str(e))
-            
-            # En cas d'erreur, on autorise par défaut
-            return True
-            
-        except Exception as e:
-            self.logger.error("Erreur inattendue lors de la vérification de robots.txt: %s", 
-                            str(e), exc_info=True)
+            rp = robotparser.RobotFileParser()
+            rp.set_url(urljoin(self.base_url, '/robots.txt'))
+            rp.read()
+            return rp.can_fetch(self.user_agent, url)
+        except Exception:
             return True
 
     @staticmethod
@@ -1135,88 +732,57 @@ class DgccrfScraper:
         # fallback: extraire comme liste_produit
         yield from self.iter_from_liste_produit_page(url)
 
-    def _normalize_category(self, text: str) -> str:
-        """Normalise le texte d'une catégorie.
-        
-        Args:
-            text: Le texte à normaliser
-            
-        Returns:
-            str: Le texte normalisé
-        """
-        if not text:
-            return ''
-            
-        h = self._clean_text(text).lower()
-        h = h.replace('é', 'e').replace('è', 'e').replace('ê', 'e')
-        h = h.replace('à', 'a').replace('î', 'i').replace('ï', 'i')
-        h = h.replace(' ', '_')
-        return h
+    def iter_from_produit_petrolier_page(self, url: Optional[str] = None) -> Iterator[Dict[str, Any]]:
+            h = self._clean_text(h).lower()
+            h = h.replace('é', 'e').replace('è', 'e').replace('ê', 'e').replace('à', 'a').replace('î','i').replace('ï','i')
+            h = h.replace(' ', '_')
+            return h
 
-    def find_category_before_table(self, table_element) -> str:
-        """Trouve le titre de catégorie précédant un tableau.
-        
-        Analyse le HTML pour trouver les catégories, notamment les balises
-        qui pourraient être des catégories (balises G?, headings, strong, etc.)
-        
-        Args:
-            table_element: L'élément BeautifulSoup du tableau
+        def find_category_before_table(table_element) -> str:
+            """Trouve le titre de catégorie précédant un tableau.
             
-        Returns:
-            str: Le nom de la catégorie ou une chaîne vide si non trouvé
-        """
-        # Liste des textes à ignorer (en-têtes de page, pas des catégories)
-        ignored_texts = {
-            'echo des marchés', 'echo des marches', 'liste des', 
-            'produits défiscalisés', 'produits defiscalises', 
-            'prix bloqués', 'prix bloques', 'dgccrf', 'gabon'
-        }
-            
-        def is_valid_category(text: str) -> bool:
-            """Vérifie si un texte est une catégorie valide.
-            
-            Args:
-                text: Le texte à vérifier
-                
-            Returns:
-                bool: True si le texte est une catégorie valide, False sinon
+            Analyse le HTML pour trouver les catégories, notamment les balises
+            qui pourraient être des catégories (balises G?, headings, strong, etc.)
             """
-            if not text or len(text) < 3:
-                return False
-                
-            # Ignorer les prix
-            if self._parse_price_fcfa(text):
-                return False
-                
-            # Ignorer les textes génériques
-            text_lower = text.lower().strip()
-            if any(ignored in text_lower for ignored in ignored_texts):
-                return False
-                
-            # Ignorer les numéros seuls
-            if text.strip().isdigit():
-                return False
-                
-            # Les catégories sont souvent en majuscules ou contiennent beaucoup de majuscules
-            # Mais pas toujours, donc on accepte aussi les textes normaux
-            return True
+            # Liste des textes à ignorer (en-têtes de page, pas des catégories)
+            ignored_texts = {
+                'echo des marchés', 'echo des marches', 'liste des', 'produits défiscalisés',
+                'produits defiscalises', 'prix bloqués', 'prix bloques', 'dgccrf', 'gabon'
+            }
             
-        # 1. Chercher dans les éléments précédents directs
-        current = table_element.previous_sibling
-        for _ in range(20):  # Augmenter la portée de recherche
-            if current is None:
-                break
-                
-            if hasattr(current, 'name') and current.name:
-                # Chercher dans les headings
-                if current.name in ('h1', 'h2', 'h3', 'h4', 'h5', 'h6'):
-                    text = self._clean_text(current.get_text())
-                    if is_valid_category(text):
-                        # Prioriser les textes en majuscules (catégories typiques)
-                        if text.isupper() or len([c for c in text if c.isupper()]) > len(text) * 0.6:
+            def is_valid_category(text: str) -> bool:
+                """Vérifie si un texte est une catégorie valide."""
+                if not text or len(text) < 3:
+                    return False
+                # Ignorer les prix
+                if self._parse_price_fcfa(text):
+                    return False
+                # Ignorer les textes génériques
+                text_lower = text.lower().strip()
+                if any(ignored in text_lower for ignored in ignored_texts):
+                    return False
+                # Ignorer les numéros seuls
+                if text.strip().isdigit():
+                    return False
+                # Les catégories sont souvent en majuscules ou contiennent beaucoup de majuscules
+                # Mais pas toujours, donc on accepte aussi les textes normaux
+                return True
+            
+            # 1. Chercher dans les éléments précédents directs
+            current = table_element.previous_sibling
+            for _ in range(20):  # Augmenter la portée de recherche
+                if current is None:
+                    break
+                if hasattr(current, 'name') and current.name:
+                    # Chercher dans les headings
+                    if current.name in ('h1', 'h2', 'h3', 'h4', 'h5', 'h6'):
+                        text = self._clean_text(current.get_text())
+                        if is_valid_category(text):
+                            # Prioriser les textes en majuscules (catégories typiques)
+                            if text.isupper() or len([c for c in text if c.isupper()]) > len(text) * 0.6:
+                                return text
+                            # Sinon, retourner si c'est valide
                             return text
-                        # Sinon, retourner si c'est valide
-                        return text
                     # Chercher dans strong/bold
                     elif current.name in ('strong', 'b'):
                         text = self._clean_text(current.get_text())

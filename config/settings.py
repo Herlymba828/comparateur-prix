@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 from pathlib import Path
 import os
+import redis
 from datetime import timedelta
 from dotenv import load_dotenv
 from django.core.exceptions import ImproperlyConfigured
@@ -648,6 +649,28 @@ else:
         'ALGORITHM': 'HS256',
         'SIGNING_KEY': os.getenv('JWT_SIGNING_KEY', SECRET_KEY),
     }
+
+# Redis Configuration
+REDIS_URL = os.getenv('REDIS_URL') or os.getenv('REDISCLOUD_URL') or 'redis://localhost:6379'
+
+# Cache Configuration
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": REDIS_URL,
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            "PASSWORD": os.getenv('REDIS_PASSWORD', ''),
+            "SOCKET_CONNECT_TIMEOUT": 5,
+            "SOCKET_TIMEOUT": 5,
+        },
+        "KEY_PREFIX": "comparateur_prix"
+    }
+}
+
+# Session Cache (optional)
+SESSION_ENGINE = "django.contrib.sessions.backends.cache"
+SESSION_CACHE_ALIAS = "default"
 
 # CORS configuration (adjust origins via env)
 # Configuration CORS pour la production et le développement mobile

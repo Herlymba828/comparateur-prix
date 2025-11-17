@@ -1,13 +1,15 @@
 {
   "source": "DGCCRF",
-  "total_items": 60,
+  "total_items": 103,
   "source_counts": {
-    "liste_produit": 60
+    "prix_homologue": 29,
+    "liste_produit": 60,
+    "produit_petrolier": 14
   },
-  "duration_sec": 4.683,
+  "duration_sec": 65.507,
   "saved_products": 0,
   "saved_prices": 0,
-  "timestamp": "2025-11-13T19:07:48.478956+00:00",
+  "timestamp": "2025-11-17T11:08:17.808687+00:00",
   "config": {
     "delay_sec": 1.0,
     "timeout_sec": 30.0,
