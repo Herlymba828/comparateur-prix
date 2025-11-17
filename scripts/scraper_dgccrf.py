@@ -15,8 +15,9 @@ import hashlib
 import pathlib
 import random
 import socket
+import argparse
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Tuple, Any, Set, Union
+from typing import Dict, List, Optional, Tuple, Any, Set, Union, Iterator
 from urllib.parse import urljoin, urlparse
 
 import requests
@@ -223,33 +224,176 @@ class DgccrfScraper:
             # En-têtes par défaut
             self.session.headers.update({
                 'User-Agent': self.user_agent,
-                'Accept': 'application/json, text/html, text/plain, */*',
-                'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'fr,fr-FR;q=0.8,en-US;q=0.5,en;q=0.3',
                 'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
             })
             
-            # Configuration du proxy si spécifié
-            if HTTP_PROXY:
-                self.logger.debug("Utilisation du proxy: %s", HTTP_PROXY)
-                self.session.proxies.update({
-                    'http': HTTP_PROXY,
-                    'https': HTTP_PROXY,
-                })
-                
-            # Configuration des nouvelles tentatives avec backoff
-            retry_strategy = requests.adapters.HTTPAdapter(
-                max_retries=3,
-                backoff_factor=0.5,
-                status_forcelist=[429, 500, 502, 503, 504]
+            # Configuration des tentatives et du backoff
+            retry_strategy = Retry(
+                total=self.max_retries,
+                backoff_factor=self.backoff,
+                status_forcelist=[500, 502, 503, 504],
+                allowed_methods=["GET", "POST"]
             )
-            self.session.mount("http://", retry_strategy)
-            self.session.mount("https://", retry_strategy)
+            
+            # Configuration des adaptateurs
+            adapter = requests.adapters.HTTPAdapter(max_retries=retry_strategy)
+            
+            # Configuration des proxies si nécessaire
+            if HTTP_PROXY:
+                self.session.proxies = {
+                    'http': HTTP_PROXY,
+                    'https': HTTP_PROXY
+                }
+            
+            # Configuration de la stratégie de retry
+            self.session.mount('http://', adapter)
+            self.session.mount('https://', adapter)
             
             self.logger.debug("Session HTTP configurée avec succès")
             
         except Exception as e:
             self.logger.critical("Échec de la configuration de la session: %s", str(e), exc_info=True)
             raise RequestError("Impossible de configurer la session HTTP") from e
+            
+    def scrape(
+        self, 
+        url: Optional[str] = None,
+        save_format: str = 'all',  # 'json', 'csv', 'excel', 'all', 'none'
+        output_filename: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Méthode principale pour lancer le scraping et sauvegarder les résultats.
+        
+        Args:
+            url: URL de départ (optionnelle)
+            save_format: Format de sauvegarde ('json', 'csv', 'excel', 'all', 'none')
+            output_filename: Nom de base pour les fichiers de sortie (sans extension)
+            
+        Returns:
+            Dict[str, Any]: Dictionnaire contenant les résultats et métadonnées
+        """
+        start_time = time.time()
+        results = {
+            'success': False,
+            'products': [],
+            'stats': {
+                'total_products': 0,
+                'processing_time': 0,
+                'saved_files': []
+            },
+            'metadata': {
+                'url': url or self.base_url,
+                'start_time': datetime.now(timezone.utc).isoformat(),
+                'end_time': None,
+                'save_format': save_format
+            },
+            'error': None
+        }
+        
+        try:
+            self.logger.info("Début du scraping de %s", url or self.base_url)
+            
+            # Vérification de l'accès via robots.txt
+            if not self._is_allowed_by_robots(url or self.base_url):
+                error_msg = "Accès refusé par robots.txt"
+                self.logger.warning(error_msg)
+                results['error'] = error_msg
+                return results
+            
+            # Ici, vous ajouterez la logique de scraping spécifique
+            # qui dépendra de la structure du site cible
+            # Pour l'exemple, nous utilisons des données factices
+            
+            # Exemple de données de produits (à remplacer par le vrai scraping)
+            products = [
+                {
+                    'id': 1,
+                    'nom': 'Exemple de produit A',
+                    'prix': 9.99,
+                    'categorie': 'Exemple',
+                    'marque': 'Marque A',
+                    'date_extraction': datetime.now(timezone.utc).isoformat(),
+                    'source': url or self.base_url
+                },
+                {
+                    'id': 2,
+                    'nom': 'Exemple de produit B',
+                    'prix': 14.99,
+                    'categorie': 'Exemple',
+                    'marque': 'Marque B',
+                    'date_extraction': datetime.now(timezone.utc).isoformat(),
+                    'source': url or self.base_url
+                }
+            ]
+            
+            # Mise à jour des résultats
+            results['products'] = products
+            results['stats']['total_products'] = len(products)
+            results['success'] = True
+            
+            # Sauvegarde des résultats selon le format demandé
+            if save_format.lower() != 'none' and products:
+                base_name = output_filename or f"dgccrf_export_{datetime.now().strftime('%Y%m%d')}"
+                saved_files = []
+                
+                # Sauvegarde au format JSON
+                if save_format.lower() in ('json', 'all'):
+                    json_file = self.data_saver.save_json(
+                        {
+                            'metadata': results['metadata'],
+                            'stats': results['stats'],
+                            'products': products
+                        },
+                        filename=base_name
+                    )
+                    if json_file:
+                        saved_files.append(str(json_file))
+                
+                # Sauvegarde au format CSV
+                if save_format.lower() in ('csv', 'all'):
+                    csv_file = self.data_saver.save_csv(
+                        products,
+                        filename=base_name
+                    )
+                    if csv_file:
+                        saved_files.append(str(csv_file))
+                
+                # Sauvegarde au format Excel
+                if save_format.lower() in ('excel', 'all'):
+                    excel_file = self.data_saver.save_excel(
+                        products,
+                        filename=base_name,
+                        sheet_name="Produits"
+                    )
+                    if excel_file:
+                        saved_files.append(str(excel_file))
+                
+                results['stats']['saved_files'] = saved_files
+            
+            # Calcul du temps de traitement
+            processing_time = time.time() - start_time
+            results['stats']['processing_time'] = round(processing_time, 2)
+            results['metadata']['end_time'] = datetime.now(timezone.utc).isoformat()
+            
+            self.logger.info(
+                "Scraping terminé avec succès. %d produits trouvés en %.2f secondes. "
+                "Fichiers sauvegardés: %s",
+                len(products),
+                processing_time,
+                ", ".join(results['stats']['saved_files']) if results['stats']['saved_files'] else "Aucun"
+            )
+            
+            return results
+            
+        except Exception as e:
+            error_msg = f"Erreur lors du scraping: {str(e)}"
+            self.logger.error(error_msg, exc_info=True)
+            results['error'] = error_msg
+            results['metadata']['end_time'] = datetime.now(timezone.utc).isoformat()
+            results['stats']['processing_time'] = round(time.time() - start_time, 2)
+            return results
 
     def _get(self, path: str, **kwargs) -> requests.Response:
         """Effectue une requête GET relative à l'URL de base.
