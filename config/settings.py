@@ -280,33 +280,47 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-# Support MySQL avec PyMySQL (si mysqlclient ne fonctionne pas)
-try:
-    import pymysql
-    pymysql.install_as_MySQLdb()
-except ImportError:
-    pass
-
-# Support pour dj-database-url (Railway, Heroku, etc.)
-# Utilise DATABASE_URL si disponible, sinon utilise les variables individuelles
-try:
-    import dj_database_url
-    DATABASE_URL = os.getenv('DATABASE_URL')
-    
-    if DATABASE_URL:
-        # Utiliser DATABASE_URL (priorité pour Railway, Heroku, etc.)
-        DATABASES = {
-            'default': dj_database_url.config(
-                default=DATABASE_URL,
-                conn_max_age=600,
-                conn_health_checks=True,
-            )
+# Configuration de la base de données en fonction de l'environnement
+if DEBUG:
+    # Configuration pour le développement local (SQLite)
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
         }
-        # Forcer UTF-8 pour PostgreSQL
-        if DATABASES['default']['ENGINE'] == 'django.db.backends.postgresql':
-            DATABASES['default'].setdefault('OPTIONS', {})
-            DATABASES['default']['OPTIONS']['options'] = '-c client_encoding=UTF8'
-    else:
+    }
+else:
+    # Configuration pour la production (PostgreSQL avec SSL)
+    try:
+        import dj_database_url
+        
+        # Utiliser DATABASE_URL si disponible (pour Railway, Heroku, etc.)
+        if os.getenv('DATABASE_URL'):
+            DATABASES = {
+                'default': dj_database_url.config(
+                    default=os.getenv('DATABASE_URL'),
+                    conn_max_age=600,
+                    conn_health_checks=True,
+                    ssl_require=True
+                )
+            }
+        else:
+            # Configuration manuelle pour la production
+            DATABASES = {
+                'default': {
+                    'ENGINE': 'django.db.backends.postgresql',
+                    'NAME': os.getenv('POSTGRES_DB', 'comparateur_prix'),
+                    'USER': os.getenv('POSTGRES_USER', 'postgres'),
+                    'PASSWORD': os.getenv('POSTGRES_PASSWORD', ''),
+                    'HOST': os.getenv('POSTGRES_HOST', 'localhost'),
+                    'PORT': os.getenv('POSTGRES_PORT', '5432'),
+                    'OPTIONS': {
+                        'sslmode': 'require' if os.getenv('POSTGRES_SSL_REQUIRE', 'True').lower() == 'true' else 'disable',
+                        'options': '-c client_encoding=UTF8',
+                    },
+                }
+            }
+    except ImportError:
         # Fallback: utiliser les variables d'environnement individuelles
         DB_ENGINE = os.getenv('DB_ENGINE', 'postgresql').lower()
         DB_NAME = os.getenv('DB_NAME') or os.getenv('POSTGRES_DB') or os.getenv('MYSQL_DB', 'soutenance2')
@@ -352,10 +366,6 @@ try:
                     },
                 },
             }
-except ImportError:
-    # Fallback si dj-database-url n'est pas installé
-    DB_ENGINE = os.getenv('DB_ENGINE', 'postgresql').lower()
-    DB_NAME = os.getenv('DB_NAME') or os.getenv('POSTGRES_DB') or os.getenv('MYSQL_DB', 'soutenance2')
     DB_USER = os.getenv('DB_USER') or os.getenv('POSTGRES_USER') or os.getenv('MYSQL_USER', 'postgres')
     DB_PASSWORD = (
         os.getenv('DB_PASSWORD') or 
