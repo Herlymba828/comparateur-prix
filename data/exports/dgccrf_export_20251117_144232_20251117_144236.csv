@@ -1,0 +1,3 @@
+id,nom,prix,categorie,marque,date_extraction,source
+1,Exemple de produit A,9.99,Exemple,Marque A,2025-11-17T13:42:36.152329+00:00,https://www.dgccrf.ga/
+2,Exemple de produit B,14.99,Exemple,Marque B,2025-11-17T13:42:36.152329+00:00,https://www.dgccrf.ga/

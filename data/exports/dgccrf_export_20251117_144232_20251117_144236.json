@@ -1,0 +1,33 @@
+{
+  "metadata": {
+    "url": "https://www.dgccrf.ga/",
+    "start_time": "2025-11-17T13:42:32.547361+00:00",
+    "end_time": null,
+    "save_format": "all"
+  },
+  "stats": {
+    "total_products": 2,
+    "processing_time": 0,
+    "saved_files": []
+  },
+  "products": [
+    {
+      "id": 1,
+      "nom": "Exemple de produit A",
+      "prix": 9.99,
+      "categorie": "Exemple",
+      "marque": "Marque A",
+      "date_extraction": "2025-11-17T13:42:36.152329+00:00",
+      "source": "https://www.dgccrf.ga/"
+    },
+    {
+      "id": 2,
+      "nom": "Exemple de produit B",
+      "prix": 14.99,
+      "categorie": "Exemple",
+      "marque": "Marque B",
+      "date_extraction": "2025-11-17T13:42:36.152329+00:00",
+      "source": "https://www.dgccrf.ga/"
+    }
+  ]
+}
