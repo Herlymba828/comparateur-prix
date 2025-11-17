@@ -131,13 +131,39 @@ def dgccrf_scrape_report_task(self, limit: int | None = None,
                               sql_out: str | None = None,
                               report_out: str | None = None,
                               sources: list[str] | None = None) -> dict:
-    """Tâche Celery pour le scraping DGCCRF.
+    """Tâche Celery pour le scraping DGCCRF avec sauvegarde automatique en base de données.
     
-    Utilise directement le scraper Python au lieu de subprocess pour une meilleure intégration.
-    Retourne un dictionnaire avec les statistiques de l'extraction.
+    Cette tâche automatise complètement le processus de scraping et de sauvegarde :
+    - Scrape les données depuis les sources DGCCRF
+    - Sauvegarde automatiquement en base de données (Produit, Prix, HomologationProduit, PrixHomologue)
+    - Génère des rapports détaillés
+    - Gère les erreurs avec retry automatique
+    
+    Args:
+        limit: Limite le nombre d'éléments à scraper (None = pas de limite)
+        unified: Export au format unifié
+        save: Sauvegarder en base de données (True par défaut)
+        only_changed: Ne scraper que les éléments modifiés (True par défaut pour performance)
+        csv_out: Chemin de sortie CSV (optionnel)
+        sql_out: Chemin de sortie SQL (optionnel)
+        report_out: Chemin du rapport JSON (optionnel)
+        sources: Liste des sources à scraper (par défaut: toutes)
+    
+    Returns:
+        dict: Statistiques de l'extraction avec:
+            - success: bool
+            - total_items: int
+            - saved_products: int
+            - saved_prices: int
+            - source_counts: dict
+            - duration_sec: float
+            - timestamp: str
     """
     logger = logging.getLogger(__name__)
-    logger.info(f"Début du scraping DGCCRF (limit={limit}, save={save}, only_changed={only_changed})")
+    logger.info(
+        f"Début du scraping DGCCRF automatisé "
+        f"(limit={limit}, save={save}, only_changed={only_changed}, sources={sources})"
+    )
     
     try:
         # Importer le scraper directement
@@ -149,6 +175,12 @@ def dgccrf_scrape_report_task(self, limit: int | None = None,
         # Import du scraper depuis scripts/
         import importlib.util
         scraper_path = base_dir / 'scripts' / 'scraper_dgccrf.py'
+        
+        if not scraper_path.exists():
+            error_msg = f"Fichier scraper introuvable: {scraper_path}"
+            logger.error(error_msg)
+            raise FileNotFoundError(error_msg)
+        
         spec = importlib.util.spec_from_file_location("scraper_dgccrf", scraper_path)
         scraper_module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(scraper_module)
@@ -158,16 +190,26 @@ def dgccrf_scrape_report_task(self, limit: int | None = None,
         data_dir = base_dir / 'data'
         data_dir.mkdir(exist_ok=True)
         
-        csv_path = csv_out or (data_dir / 'dgccrf_daily.csv')
-        sql_path = sql_out or (data_dir / 'dgccrf_daily.sql')
-        report_path = report_out or (data_dir / 'dgccrf_daily_report.json')
+        # Sources par défaut : toutes les sources disponibles
+        default_sources = ['auto', 'prix_homologue', 'liste_produit', 'produit_petrolier']
+        sources_to_use = sources if sources else default_sources
         
-        # Exécuter le scraping
+        # Générer les noms de fichiers avec timestamp pour éviter les écrasements
+        from datetime import datetime
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        
+        csv_path = csv_out or (data_dir / f'dgccrf_{timestamp}.csv')
+        sql_path = sql_out or (data_dir / f'dgccrf_{timestamp}.sql')
+        report_path = report_out or (data_dir / f'dgccrf_{timestamp}_report.json')
+        
+        logger.info(f"Exécution du scraping avec sauvegarde automatique en base de données...")
+        
+        # Exécuter le scraping avec sauvegarde automatique
         result = run_scrape(
             out=None,  # Pas de JSON de sortie par défaut
             limit=limit,
-            sources=sources or ['liste_produit'],
-            save=save,
+            sources=sources_to_use,
+            save=save,  # Sauvegarde automatique en base de données
             unified=unified,
             csv_out=str(csv_path) if csv_out or not only_changed else None,
             sql_out=str(sql_path) if sql_out or not only_changed else None,
@@ -180,11 +222,12 @@ def dgccrf_scrape_report_task(self, limit: int | None = None,
             'success': True,
             'result_code': result,
             'report_path': str(report_path),
+            'sources': sources_to_use,
         }
         
         try:
-            if report_path.exists():
-                report_data = json.loads(report_path.read_text(encoding='utf-8'))
+            if Path(report_path).exists():
+                report_data = json.loads(Path(report_path).read_text(encoding='utf-8'))
                 stats.update({
                     'total_items': report_data.get('total_items', 0),
                     'source_counts': report_data.get('source_counts', {}),
@@ -193,10 +236,21 @@ def dgccrf_scrape_report_task(self, limit: int | None = None,
                     'duration_sec': report_data.get('duration_sec', 0),
                     'timestamp': report_data.get('timestamp', ''),
                 })
+                
+                logger.info(
+                    f"Scraping DGCCRF terminé avec succès: "
+                    f"{stats.get('total_items', 0)} items extraits, "
+                    f"{stats.get('saved_products', 0)} produits sauvegardés, "
+                    f"{stats.get('saved_prices', 0)} prix sauvegardés"
+                )
+            else:
+                logger.warning(f"Rapport non généré: {report_path}")
+                stats['success'] = False
+                stats['error'] = 'Rapport non généré'
         except Exception as e:
-            logger.warning(f"Impossible de lire le rapport: {e}")
+            logger.warning(f"Impossible de lire le rapport: {e}", exc_info=True)
+            stats['warning'] = f"Impossible de lire le rapport: {e}"
         
-        logger.info(f"Scraping DGCCRF terminé: {stats.get('total_items', 0)} items extraits")
         return stats
         
     except Exception as exc:

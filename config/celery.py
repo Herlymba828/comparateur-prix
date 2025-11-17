@@ -61,33 +61,51 @@ app.conf.beat_schedule = {
         'args': (),
     },
     # Scraping DGCCRF quotidien (unified + save + only-changed)
+    # Exécute tous les jours avec sauvegarde automatique en base de données
     'dgccrf-scrape-quotidien': {
         'task': 'apps.produits.tasks.dgccrf_scrape_report_task',
-        'schedule': 86400.0,  # 1 jour
+        'schedule': 86400.0,  # 1 jour (86400 secondes)
         'kwargs': {
-            'limit': None,
+            'limit': None,  # Pas de limite
             'unified': True,
-            'save': True,
-            'only_changed': True,
-            'csv_out': 'data/dgccrf_daily.csv',
-            'sql_out': 'data/dgccrf_daily.sql',
-            'report_out': 'data/dgccrf_daily_report.json',
-            'sources': ['liste_produit'],
+            'save': True,  # Sauvegarde automatique en base de données
+            'only_changed': True,  # Mode incrémental pour performance
+            'csv_out': None,  # Pas de CSV pour les runs quotidiens (gain d'espace)
+            'sql_out': None,  # Pas de SQL pour les runs quotidiens
+            'report_out': None,  # Rapport avec timestamp automatique
+            'sources': ['auto', 'prix_homologue', 'liste_produit', 'produit_petrolier'],  # Toutes les sources
         },
     },
-    # Scraping DGCCRF mensuel (rafraîchissement complet)
-    'dgccrf-scrape-mensuel': {
+    # Scraping DGCCRF hebdomadaire (rafraîchissement complet toutes les sources)
+    # Exécute tous les 7 jours avec sauvegarde automatique
+    'dgccrf-scrape-hebdomadaire': {
         'task': 'apps.produits.tasks.dgccrf_scrape_report_task',
-        'schedule': 2592000.0,  # 30 jours
+        'schedule': 604800.0,  # 7 jours (604800 secondes)
         'kwargs': {
             'limit': None,
             'unified': True,
-            'save': True,
+            'save': True,  # Sauvegarde automatique en base de données
             'only_changed': False,  # Rafraîchissement complet
-            'csv_out': 'data/dgccrf_monthly.csv',
-            'sql_out': 'data/dgccrf_monthly.sql',
-            'report_out': 'data/dgccrf_monthly_report.json',
-            'sources': ['liste_produit'],
+            'csv_out': None,
+            'sql_out': None,
+            'report_out': None,
+            'sources': ['auto', 'prix_homologue', 'liste_produit', 'produit_petrolier'],  # Toutes les sources
+        },
+    },
+    # Scraping DGCCRF mensuel (rafraîchissement complet avec exports)
+    # Exécute tous les 30 jours avec sauvegarde automatique
+    'dgccrf-scrape-mensuel': {
+        'task': 'apps.produits.tasks.dgccrf_scrape_report_task',
+        'schedule': 2592000.0,  # 30 jours (2592000 secondes)
+        'kwargs': {
+            'limit': None,
+            'unified': True,
+            'save': True,  # Sauvegarde automatique en base de données
+            'only_changed': False,  # Rafraîchissement complet
+            'csv_out': None,  # CSV avec timestamp automatique
+            'sql_out': None,  # SQL avec timestamp automatique
+            'report_out': None,  # Rapport avec timestamp automatique
+            'sources': ['auto', 'prix_homologue', 'liste_produit', 'produit_petrolier'],  # Toutes les sources
         },
     },
     # Géocoder quotidiennement les magasins sans coordonnées (si clé HERE fournie)
