@@ -309,12 +309,21 @@ else:
         
         # Utiliser DATABASE_URL si disponible (pour Railway, Heroku, etc.)
         if os.getenv('DATABASE_URL'):
+            # Détecter si on est sur Railway ou en local
+            # Railway utilise des domaines .railway.internal ou .railway.app
+            database_url = os.getenv('DATABASE_URL')
+            is_railway = '.railway.internal' in database_url or '.railway.app' in database_url or 'railway' in database_url.lower()
+            is_localhost = 'localhost' in database_url or '127.0.0.1' in database_url
+            
+            # SSL requis seulement pour Railway/Heroku, pas pour localhost
+            ssl_required = is_railway and not is_localhost
+            
             DATABASES = {
                 'default': dj_database_url.config(
                     default=os.getenv('DATABASE_URL'),
                     conn_max_age=600,
                     conn_health_checks=True,
-                    ssl_require=True
+                    ssl_require=ssl_required
                 )
             }
             # Déterminer DB_ENGINE à partir de l'ENGINE configuré
@@ -327,16 +336,21 @@ else:
                 DB_ENGINE = 'postgresql'  # Par défaut
         else:
             # Configuration manuelle pour la production
+            # Détecter si on est en local (localhost) pour désactiver SSL
+            db_host = os.getenv('POSTGRES_HOST', 'localhost')
+            is_local = db_host in ('localhost', '127.0.0.1')
+            ssl_require_env = os.getenv('POSTGRES_SSL_REQUIRE', 'False' if is_local else 'True')
+            
             DATABASES = {
                 'default': {
                     'ENGINE': 'django.db.backends.postgresql',
                     'NAME': os.getenv('POSTGRES_DB', 'comparateur_prix'),
                     'USER': os.getenv('POSTGRES_USER', 'postgres'),
                     'PASSWORD': os.getenv('POSTGRES_PASSWORD', ''),
-                    'HOST': os.getenv('POSTGRES_HOST', 'localhost'),
+                    'HOST': db_host,
                     'PORT': os.getenv('POSTGRES_PORT', '5432'),
                     'OPTIONS': {
-                        'sslmode': 'require' if os.getenv('POSTGRES_SSL_REQUIRE', 'True').lower() == 'true' else 'disable',
+                        'sslmode': 'require' if ssl_require_env.lower() in ('1', 'true', 'yes', 'y') else 'disable',
                         'options': '-c client_encoding=UTF8',
                     },
                 }
