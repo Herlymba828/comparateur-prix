@@ -84,13 +84,27 @@ else:
     ]
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
-if not SECRET_KEY:
-    if DEBUG:
-        # Clé éphémère auto-générée pour le développement local uniquement
-        SECRET_KEY = token_urlsafe(50)
-    else:
-        raise ImproperlyConfigured('DJANGO_SECRET_KEY must be set in production')
+def get_secret_key():
+    """Récupère la clé secrète depuis les variables d'environnement ou génère une clé de développement."""
+    secret_key = os.getenv('DJANGO_SECRET_KEY')
+    
+    if not secret_key and DEBUG:
+        # En développement, générer une clé si non définie
+        secret_key = token_urlsafe(50)
+        print('\033[93m' + 'AVERTISSEMENT: Utilisation d\'une clé secrète générée automatiquement. ' 
+              'Pour la production, définissez DJANGO_SECRET_KEY dans les variables d\'environnement.' + '\033[0m')
+    elif not secret_key and not DEBUG:
+        # En production, la clé est obligatoire
+        raise ImproperlyConfigured(
+            'DJANGO_SECRET_KEY doit être défini en production. ' \
+            'Générez une nouvelle clé avec: ' \
+            'python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"'
+        )
+    
+    return secret_key
+
+# Utilisation
+SECRET_KEY = get_secret_key()
 
 # Configuration des hôtes autorisés
 # Base: toujours autoriser localhost et les IPs locales pour le développement
