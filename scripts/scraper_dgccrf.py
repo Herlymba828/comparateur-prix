@@ -5,26 +5,28 @@ Ce module fournit des fonctionnalités pour extraire les données de prix
 à partir du site de la DGCCRF avec gestion des erreurs et des reprises.
 """
 
-import argparse
-import hashlib
-import json
-import logging
 import os
-import pathlib
 import re
-import socket
 import sys
 import time
+import json
+import logging
+import hashlib
+import pathlib
+import random
+import socket
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Any, Set, Union
 from urllib.parse import urljoin, urlparse
 
 import requests
+from bs4 import BeautifulSoup
 import urllib.robotparser as robotparser
-from bs4 import BeautifulSoup, element
-from requests.exceptions import (
-    RequestException, Timeout, HTTPError, ConnectionError, SSLError
-)
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
+
+# Import de la classe DataSaver
+from .data_saver import DataSaver
 
 # Import de la configuration
 from .config import (
@@ -188,7 +190,9 @@ class DgccrfScraper:
         request_delay: Optional[float] = None, 
         timeout: Optional[float] = None,
         max_retries: Optional[int] = None,
-        backoff: Optional[float] = None
+        backoff: Optional[float] = None,
+        output_dir: Optional[str] = None,
+        max_backups: int = 5
     ):
         # Configuration
         self.base_url = base_url or DEFAULT_BASE_URL
@@ -201,6 +205,12 @@ class DgccrfScraper:
         # Configuration du logger
         self.logger = logging.getLogger(f'{__name__}.DgccrfScraper')
         self.logger.debug("Initialisation du scraper avec base_url=%s", self.base_url)
+        
+        # Initialisation du DataSaver pour la sauvegarde des données
+        self.data_saver = DataSaver(
+            output_dir=output_dir or "data/exports",
+            max_backups=max_backups
+        )
         
         # Configuration de la session HTTP
         self._setup_session()
