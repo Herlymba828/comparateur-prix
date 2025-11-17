@@ -366,6 +366,10 @@ else:
                     },
                 },
             }
+    # Définir DB_ENGINE en premier
+    DB_ENGINE = os.getenv('DB_ENGINE', 'postgresql').lower()
+    
+    # Récupérer les variables de la base de données
     DB_USER = os.getenv('DB_USER') or os.getenv('POSTGRES_USER') or os.getenv('MYSQL_USER', 'postgres')
     DB_PASSWORD = (
         os.getenv('DB_PASSWORD') or 
@@ -392,6 +396,7 @@ else:
             }
         }
     else:
+        # Configuration par défaut pour PostgreSQL
         DATABASES = {
             'default': {
                 'ENGINE': 'django.db.backends.postgresql',
