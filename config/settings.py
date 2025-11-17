@@ -89,18 +89,27 @@ def get_secret_key():
     # Essayer d'abord avec DJANGO_SECRET_KEY, puis avec SECRET_KEY (pour compatibilité)
     secret_key = os.getenv('DJANGO_SECRET_KEY') or os.getenv('SECRET_KEY')
     
-    # Si on est en mode développement et qu'aucune clé n'est définie
-    if not secret_key and DEBUG:
-        # En développement, générer une clé si non définie
+    # Si aucune clé n'est définie, générer une clé automatiquement
+    # Cela garantit que l'application démarre toujours, même si la variable d'environnement n'est pas définie
+    if not secret_key:
+        # Générer une clé sécurisée de 50 caractères
         secret_key = token_urlsafe(50)
-        print('\033[93m' + 'AVERTISSEMENT: Utilisation d\'une clé secrète générée automatiquement. ' 
-              'Pour la production, définissez DJANGO_SECRET_KEY dans les variables d\'environnement.' + '\033[0m')
-    # Si on est en production et qu'aucune clé n'est définie
-    elif not secret_key and not DEBUG:
-        # En production, utiliser une valeur par défaut si possible
-        secret_key = 'django-insecure-' + token_urlsafe(32)
-        print('\033[93m' + 'AVERTISSEMENT: Utilisation d\'une clé secrète générée automatiquement. ' 
-              'Pour des raisons de sécurité, définissez une clé secrète personnalisée avec DJANGO_SECRET_KEY.' + '\033[0m')
+        
+        # Avertissement selon l'environnement
+        if DEBUG:
+            print('\033[93m' + 'AVERTISSEMENT: Utilisation d\'une clé secrète générée automatiquement. ' 
+                  'Pour la production, définissez DJANGO_SECRET_KEY dans les variables d\'environnement.' + '\033[0m')
+        else:
+            # En production, avertissement plus fort mais on continue quand même
+            print('\033[91m' + '⚠️  ATTENTION PRODUCTION: DJANGO_SECRET_KEY n\'est pas définie. ' 
+                  'Une clé a été générée automatiquement, mais pour des raisons de sécurité, ' 
+                  'définissez DJANGO_SECRET_KEY dans les variables d\'environnement. ' 
+                  'Générez une clé avec: python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"' + '\033[0m')
+    
+    # Garantir qu'une clé est toujours retournée (sécurité supplémentaire)
+    if not secret_key:
+        # Fallback ultime: générer une clé même si token_urlsafe a échoué (ne devrait jamais arriver)
+        secret_key = token_urlsafe(50)
     
     return secret_key
 
