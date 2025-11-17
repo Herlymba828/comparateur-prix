@@ -301,6 +301,9 @@ if DEBUG:
     }
 else:
     # Configuration pour la production (PostgreSQL avec SSL)
+    # Définir DB_ENGINE en premier pour qu'il soit disponible partout
+    DB_ENGINE = os.getenv('DB_ENGINE', 'postgresql').lower()
+    
     try:
         import dj_database_url
         
@@ -314,6 +317,14 @@ else:
                     ssl_require=True
                 )
             }
+            # Déterminer DB_ENGINE à partir de l'ENGINE configuré
+            db_engine_name = DATABASES['default'].get('ENGINE', '')
+            if 'mysql' in db_engine_name:
+                DB_ENGINE = 'mysql'
+            elif 'postgresql' in db_engine_name:
+                DB_ENGINE = 'postgresql'
+            else:
+                DB_ENGINE = 'postgresql'  # Par défaut
         else:
             # Configuration manuelle pour la production
             DATABASES = {
@@ -376,50 +387,6 @@ else:
                     },
                 },
             }
-    # Définir DB_ENGINE en premier
-    DB_ENGINE = os.getenv('DB_ENGINE', 'postgresql').lower()
-    
-    # Récupérer les variables de la base de données
-    DB_USER = os.getenv('DB_USER') or os.getenv('POSTGRES_USER') or os.getenv('MYSQL_USER', 'postgres')
-    DB_PASSWORD = (
-        os.getenv('DB_PASSWORD') or 
-        os.getenv('POSTGRES_PASSWORD') or 
-        os.getenv('MYSQL_PASSWORD') or 
-        ''
-    )
-    DB_HOST = os.getenv('DB_HOST') or os.getenv('POSTGRES_HOST') or os.getenv('MYSQL_HOST', 'localhost')
-    DB_PORT = os.getenv('DB_PORT') or os.getenv('POSTGRES_PORT') or os.getenv('MYSQL_PORT', '3306' if DB_ENGINE == 'mysql' else '5432')
-    
-    if DB_ENGINE == 'mysql':
-        DATABASES = {
-            'default': {
-                'ENGINE': 'django.db.backends.mysql',
-                'NAME': DB_NAME,
-                'USER': DB_USER,
-                'PASSWORD': DB_PASSWORD,
-                'HOST': DB_HOST,
-                'PORT': DB_PORT,
-                'OPTIONS': {
-                    'charset': 'utf8mb4',
-                    'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
-                },
-            }
-        }
-    else:
-        # Configuration par défaut pour PostgreSQL
-        DATABASES = {
-            'default': {
-                'ENGINE': 'django.db.backends.postgresql',
-                'NAME': DB_NAME,
-                'USER': DB_USER,
-                'PASSWORD': DB_PASSWORD,
-                'HOST': DB_HOST,
-                'PORT': DB_PORT,
-                'OPTIONS': {
-                    'options': '-c client_encoding=UTF8',
-                },
-            },
-        }
 
 # Admin URL paramétrable (obfuscation basique en prod)
 ADMIN_URL = os.getenv('DJANGO_ADMIN_URL', 'admin/')
