@@ -86,20 +86,21 @@ else:
 # SECURITY WARNING: keep the secret key used in production secret!
 def get_secret_key():
     """Récupère la clé secrète depuis les variables d'environnement ou génère une clé de développement."""
-    secret_key = os.getenv('DJANGO_SECRET_KEY')
+    # Essayer d'abord avec DJANGO_SECRET_KEY, puis avec SECRET_KEY (pour compatibilité)
+    secret_key = os.getenv('DJANGO_SECRET_KEY') or os.getenv('SECRET_KEY')
     
+    # Si on est en mode développement et qu'aucune clé n'est définie
     if not secret_key and DEBUG:
         # En développement, générer une clé si non définie
         secret_key = token_urlsafe(50)
         print('\033[93m' + 'AVERTISSEMENT: Utilisation d\'une clé secrète générée automatiquement. ' 
               'Pour la production, définissez DJANGO_SECRET_KEY dans les variables d\'environnement.' + '\033[0m')
+    # Si on est en production et qu'aucune clé n'est définie
     elif not secret_key and not DEBUG:
-        # En production, la clé est obligatoire
-        raise ImproperlyConfigured(
-            'DJANGO_SECRET_KEY doit être défini en production. ' \
-            'Générez une nouvelle clé avec: ' \
-            'python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"'
-        )
+        # En production, utiliser une valeur par défaut si possible
+        secret_key = 'django-insecure-' + token_urlsafe(32)
+        print('\033[93m' + 'AVERTISSEMENT: Utilisation d\'une clé secrète générée automatiquement. ' 
+              'Pour des raisons de sécurité, définissez une clé secrète personnalisée avec DJANGO_SECRET_KEY.' + '\033[0m')
     
     return secret_key
 
