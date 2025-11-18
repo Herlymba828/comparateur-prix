@@ -315,12 +315,16 @@ else:
             is_railway = '.railway.internal' in database_url or '.railway.app' in database_url or 'railway' in database_url
             is_localhost = 'localhost' in database_url or '127.0.0.1' in database_url or '::1' in database_url
             
-            # SSL requis seulement pour Railway/Heroku distant, JAMAIS pour localhost
-            # Même si Railway CLI injecte DATABASE_URL, si c'est localhost, on désactive SSL
-            ssl_required = is_railway and not is_localhost
+            # Détecter si on exécute depuis la machine locale (pas dans Railway)
+            # Si RAILWAY_ENVIRONMENT n'est pas défini, on est probablement en local
+            is_running_locally = not os.getenv('RAILWAY_ENVIRONMENT') and not os.getenv('RAILWAY_PROJECT_ID')
             
-            # Forcer la désactivation SSL si c'est clairement localhost
-            if is_localhost:
+            # SSL requis seulement pour Railway/Heroku distant, JAMAIS pour localhost ou exécution locale
+            # Si on exécute depuis la machine locale avec railway run, désactiver SSL
+            ssl_required = is_railway and not is_localhost and not is_running_locally
+            
+            # Forcer la désactivation SSL si c'est clairement localhost ou exécution locale
+            if is_localhost or is_running_locally:
                 ssl_required = False
             
             DATABASES = {
@@ -332,11 +336,21 @@ else:
                 )
             }
             
-            # Si c'est localhost, forcer sslmode=disable dans OPTIONS
-            if is_localhost and DATABASES['default'].get('OPTIONS'):
+            # Vérifier le HOST réel après configuration pour détecter les redirections
+            db_host_actual = DATABASES['default'].get('HOST', '')
+            is_actually_localhost = (
+                is_localhost or 
+                is_running_locally or
+                db_host_actual in ('localhost', '127.0.0.1', '::1') or 
+                'localhost' in str(db_host_actual).lower()
+            )
+            
+            # Si c'est localhost ou exécution locale, forcer sslmode=disable dans OPTIONS
+            if is_actually_localhost:
+                DATABASES['default'].setdefault('OPTIONS', {})
                 DATABASES['default']['OPTIONS']['sslmode'] = 'disable'
-            elif is_localhost:
-                DATABASES['default']['OPTIONS'] = {'sslmode': 'disable'}
+                # Forcer aussi ssl_require à False pour dj_database_url
+                ssl_required = False
             # Déterminer DB_ENGINE à partir de l'ENGINE configuré
             db_engine_name = DATABASES['default'].get('ENGINE', '')
             if 'mysql' in db_engine_name:
@@ -448,9 +462,19 @@ if not DEBUG:
         )
         raise ImproperlyConfigured(error_msg)
     # Activer SSL vers PostgreSQL par défaut (désactivable via POSTGRES_SSL_REQUIRE=false)
-    if DB_ENGINE == 'postgresql' and os.getenv('POSTGRES_SSL_REQUIRE', 'True').lower() in ('1', 'true', 'yes', 'y'):
-        DATABASES['default'].setdefault('OPTIONS', {})
-        DATABASES['default']['OPTIONS']['sslmode'] = 'require'
+    # MAIS seulement si ce n'est pas localhost
+    if DB_ENGINE == 'postgresql':
+        db_host = DATABASES['default'].get('HOST', '')
+        is_local = db_host in ('localhost', '127.0.0.1', '::1') or 'localhost' in str(db_host).lower()
+        
+        # Ne pas forcer SSL si c'est localhost
+        if not is_local and os.getenv('POSTGRES_SSL_REQUIRE', 'True').lower() in ('1', 'true', 'yes', 'y'):
+            DATABASES['default'].setdefault('OPTIONS', {})
+            DATABASES['default']['OPTIONS']['sslmode'] = 'require'
+        elif is_local:
+            # Forcer la désactivation SSL pour localhost
+            DATABASES['default'].setdefault('OPTIONS', {})
+            DATABASES['default']['OPTIONS']['sslmode'] = 'disable'
 
 # --- Social Auth (social-auth-app-django) ---
 # Authentication backends: social providers + default ModelBackend
