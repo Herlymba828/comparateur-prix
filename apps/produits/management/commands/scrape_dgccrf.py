@@ -74,6 +74,11 @@ class Command(BaseCommand):
             self.stdout.write(self.style.ERROR(f"Fichier scraper introuvable: {scraper_path}"))
             return
         
+        # Ajouter le répertoire scripts au path pour que les imports absolus fonctionnent
+        scripts_dir = base_dir / 'scripts'
+        if str(scripts_dir) not in sys.path:
+            sys.path.insert(0, str(scripts_dir))
+        
         spec = importlib.util.spec_from_file_location("scraper_dgccrf", scraper_path)
         scraper_module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(scraper_module)

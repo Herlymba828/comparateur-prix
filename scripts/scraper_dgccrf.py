@@ -26,17 +26,37 @@ import urllib.robotparser as robotparser
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-# Import de la classe DataSaver
-from .data_saver import DataSaver
-
-# Import de la configuration
-from .config import (
-    DEFAULT_BASE_URL, DEFAULT_USER_AGENT, REQUEST_DELAY_SEC, REQUEST_TIMEOUT,
-    MAX_RETRIES, BACKOFF_SEC, HTTP_PROXY, LOG_FILE, STATE_FILE, CHECKPOINT_PATH,
-    RAW_DIR, DEFAULT_REPORT_OUT, SAVE_TO_DB, RESPECT_ROBOTS, SKIP_UNCHANGED,
-    PRIX_HOMOLOGUE_URL, LISTE_PRODUIT_URL, PRODUIT_PETROLIER_URL,
-    OFF_ENABLE, OFF_TIMEOUT, OFF_MIN_SCORE
-)
+# Import de la classe DataSaver et de la configuration
+# Utiliser des imports absolus pour supporter le chargement dynamique
+try:
+    # Essayer d'abord les imports relatifs (si exécuté comme module)
+    from .data_saver import DataSaver
+    from .config import (
+        DEFAULT_BASE_URL, DEFAULT_USER_AGENT, REQUEST_DELAY_SEC, REQUEST_TIMEOUT,
+        MAX_RETRIES, BACKOFF_SEC, HTTP_PROXY, LOG_FILE, STATE_FILE, CHECKPOINT_PATH,
+        RAW_DIR, DEFAULT_REPORT_OUT, SAVE_TO_DB, RESPECT_ROBOTS, SKIP_UNCHANGED,
+        PRIX_HOMOLOGUE_URL, LISTE_PRODUIT_URL, PRODUIT_PETROLIER_URL,
+        OFF_ENABLE, OFF_TIMEOUT, OFF_MIN_SCORE
+    )
+except ImportError:
+    # Fallback: imports absolus depuis scripts/ (pour chargement dynamique)
+    import sys
+    from pathlib import Path
+    
+    # Ajouter le répertoire scripts au path si nécessaire
+    script_dir = Path(__file__).parent
+    if str(script_dir) not in sys.path:
+        sys.path.insert(0, str(script_dir))
+    
+    # Imports absolus
+    from data_saver import DataSaver
+    from config import (
+        DEFAULT_BASE_URL, DEFAULT_USER_AGENT, REQUEST_DELAY_SEC, REQUEST_TIMEOUT,
+        MAX_RETRIES, BACKOFF_SEC, HTTP_PROXY, LOG_FILE, STATE_FILE, CHECKPOINT_PATH,
+        RAW_DIR, DEFAULT_REPORT_OUT, SAVE_TO_DB, RESPECT_ROBOTS, SKIP_UNCHANGED,
+        PRIX_HOMOLOGUE_URL, LISTE_PRODUIT_URL, PRODUIT_PETROLIER_URL,
+        OFF_ENABLE, OFF_TIMEOUT, OFF_MIN_SCORE
+    )
 
 def setup_logging(debug: bool = False) -> logging.Logger:
     """Configure le système de journalisation.
