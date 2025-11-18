@@ -5,6 +5,7 @@ from .views import (
     autocomplete_produits, 
     homologations_stats, 
     compare_offers,
+    stats_prix,
     TestConnectionView
 )
 from .views_nearby import prix_proches_public
@@ -17,4 +18,5 @@ urlpatterns = [
     path('homologations-stats/', homologations_stats, name='api-homologations-stats'),
     path('compare/', compare_offers, name='api-compare-offers'),
     path('nearby/prix/', prix_proches_public, name='api-nearby-prix'),
+    path('stats/prix/', stats_prix, name='api-stats-prix'),
 ]

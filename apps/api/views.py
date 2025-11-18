@@ -4,13 +4,17 @@ from django.utils.dateparse import parse_datetime, parse_date
 from datetime import datetime, time
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from rest_framework.status import HTTP_200_OK
+from rest_framework.status import HTTP_200_OK, HTTP_500_INTERNAL_SERVER_ERROR
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
 from apps.produits.models import Produit
 from apps.produits.models import Prix
 from apps.magasins.models import Magasin
+from apps.produits.views import StatistiquesPrixViewSet
 from .models import SearchEvent
+import logging
+
+logger = logging.getLogger(__name__)
 from .serializers import (
     HealthSerializer,
     ProductSearchResultSerializer,
@@ -206,7 +210,26 @@ def homologations_stats(request):
     return Response(payload, status=HTTP_200_OK)
 
 
-@api_view(["GET"])
+@api_view(['GET'])
+def stats_prix(request):
+    """Endpoint pour les statistiques sur les prix (alias de /api/produits/statistiques-prix/)"""
+    try:
+        # Utiliser le ViewSet existant
+        viewset = StatistiquesPrixViewSet()
+        viewset.request = request
+        viewset.format_kwarg = None
+        
+        # Appeler la méthode list du ViewSet
+        response = viewset.list(request)
+        return response
+    except Exception as e:
+        logger.error(f"Erreur dans stats_prix: {e}", exc_info=True)
+        return Response(
+            {'erreur': 'Erreur lors de la récupération des statistiques de prix'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
 def compare_offers(request):
     """
     Comparateur public: interroge eBay (et futur Amazon) et renvoie des offres normalisées.
