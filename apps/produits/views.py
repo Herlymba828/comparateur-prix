@@ -767,9 +767,33 @@ class CategorieViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def racines(self, request):
         """Retourne uniquement les catégories racines"""
-        categories_racines = Categorie.objects.filter(parent__isnull=True)
-        serializer = self.get_serializer(categories_racines, many=True)
-        return Response(serializer.data)
+        try:
+            categories_racines = Categorie.objects.filter(parent__isnull=True)
+            serializer = self.get_serializer(categories_racines, many=True)
+            return Response(serializer.data)
+        except Exception as e:
+            logger.error(f"Erreur lors de la récupération des catégories racines: {e}", exc_info=True)
+            return Response(
+                {
+                    'erreur': 'Erreur lors de la récupération des catégories racines',
+                    'detail': str(e) if settings.DEBUG else 'Une erreur est survenue'
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    def list(self, request, *args, **kwargs):
+        """Liste des catégories avec gestion d'erreurs"""
+        try:
+            return super().list(request, *args, **kwargs)
+        except Exception as e:
+            logger.error(f"Erreur lors de la récupération des catégories: {e}", exc_info=True)
+            return Response(
+                {
+                    'erreur': 'Erreur lors de la récupération des catégories',
+                    'detail': str(e) if settings.DEBUG else 'Une erreur est survenue'
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class MarqueViewSet(viewsets.ModelViewSet):
