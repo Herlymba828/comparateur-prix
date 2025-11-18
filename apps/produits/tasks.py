@@ -259,6 +259,55 @@ def dgccrf_scrape_report_task(self, limit: int | None = None,
         raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))
 
 
+@shared_task(name="backup_database_task")
+def backup_database_task(format_type: str = 'sql', compress: bool = True, keep: int = 7) -> dict:
+    """Tâche Celery pour créer un backup de la base de données.
+    
+    Args:
+        format_type: Format du backup ('sql', 'json', ou 'both')
+        compress: Compresser le backup SQL
+        keep: Nombre de backups à conserver
+    
+    Returns:
+        dict: Statistiques du backup
+    """
+    logger = logging.getLogger(__name__)
+    logger.info(f"Début du backup de la base de données (format: {format_type})")
+    
+    try:
+        from django.core.management import call_command
+        from io import StringIO
+        
+        # Exécuter la commande de backup
+        output = StringIO()
+        call_command(
+            'backup_database',
+            format=format_type,
+            output='backups',
+            compress=compress,
+            keep=keep,
+            stdout=output
+        )
+        
+        result = {
+            'success': True,
+            'format': format_type,
+            'timestamp': timezone.now().isoformat(),
+            'message': 'Backup créé avec succès'
+        }
+        
+        logger.info(f"Backup de la base de données terminé: {result}")
+        return result
+        
+    except Exception as exc:
+        logger.error(f"Erreur lors du backup de la base de données: {exc}", exc_info=True)
+        return {
+            'success': False,
+            'error': str(exc),
+            'timestamp': timezone.now().isoformat()
+        }
+
+
 @shared_task(name="monitor_dgccrf_report_task")
 def monitor_dgccrf_report_task(report_path: str | None = None) -> int:
     """Vérifie le rapport DGCCRF et alerte si anomalies (ex: total_items == 0).

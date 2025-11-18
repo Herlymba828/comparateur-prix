@@ -114,4 +114,24 @@ app.conf.beat_schedule = {
         'schedule': 86400.0,  # 1 jour
         'args': (200,),
     },
+    # Backup quotidien de la base de données (tous les jours à 3h du matin)
+    'backup-database-quotidien': {
+        'task': 'apps.produits.tasks.backup_database_task',
+        'schedule': 86400.0,  # 1 jour (86400 secondes)
+        'kwargs': {
+            'format_type': 'sql',  # Backup SQL uniquement pour les runs quotidiens
+            'compress': True,  # Compresser pour économiser l'espace
+            'keep': 7,  # Garder 7 jours de backups
+        },
+    },
+    # Backup complet hebdomadaire (SQL + JSON, tous les dimanches)
+    'backup-database-hebdomadaire': {
+        'task': 'apps.produits.tasks.backup_database_task',
+        'schedule': 604800.0,  # 7 jours (604800 secondes)
+        'kwargs': {
+            'format_type': 'both',  # Backup SQL + JSON
+            'compress': True,
+            'keep': 4,  # Garder 4 semaines de backups
+        },
+    },
 }
