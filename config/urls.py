@@ -44,6 +44,10 @@ urlpatterns = [
     path('api/', include('apps.api.urls')),
     # Alias global pour compatibilité frontend
     path('api/categories/', include('apps.produits.urls')),  # Redirige vers /api/produits/categories/
+    # Alias pour compatibilité frontend (URLs alternatives)
+    path('api/prix/', include('apps.produits.urls')),  # Redirige vers /api/produits/prix/
+    path('api/magasin/', include('apps.magasins.urls')),  # Redirige vers /api/magasins/magasins/
+    path('api/stores/', include('apps.magasins.urls')),  # Alias pour /api/magasins/magasins/
     # Alias legacy pour les recommandations (si les vues sont disponibles)
     *([
         path('api/reco/pour-vous/', reco_views.recommandations_pour_moi, name='reco-pour-vous-legacy'),
