@@ -4,14 +4,20 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticatedOrReadOnly, IsAuthenticated
 from rest_framework.pagination import PageNumberPagination
 from django_filters.rest_framework import DjangoFilterBackend
-from django.db.models import Q, Avg, Count, Min, Max, F
+from django.db.models import Q, Avg, Min, Max, Count, StdDev, F, Exists, OuterRef
 from django.utils.translation import gettext_lazy as _
+from django.utils import timezone
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
-from .search import search_products, suggest_products
+from django.conf import settings
+from datetime import timedelta
+from decimal import Decimal
+import logging
 from PIL import Image
 import io as _io
 import requests
+
+from .search import search_products, suggest_products
 from .models import (
     Categorie, Marque, UniteMesure, Produit,
     AvisProduit, CaracteristiqueProduit, HistoriquePrixProduit,
@@ -32,21 +38,7 @@ from .filters import (
     ProduitFilter, CategorieFilter, MarqueFilter, PrixFilter,
     AlertePrixFilter, SuggestionPrixFilter,
 )
-from rest_framework import viewsets, status, filters
-from rest_framework.decorators import action
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticatedOrReadOnly, IsAuthenticated
-from rest_framework.pagination import PageNumberPagination
-from django_filters.rest_framework import DjangoFilterBackend
-from django.db.models import Q, Avg, Min, Max, Count, StdDev, F
-from django.utils.translation import gettext_lazy as _
-from django.utils import timezone
-from django.shortcuts import get_object_or_404
-from datetime import timedelta
-from decimal import Decimal
-import logging
 from .tasks import verifier_alertes_prix_task
-"""Nettoyage: aucune importation de modèles non présents (AlertePrix, ComparaisonPrix, SuggestionPrix, Offre)."""
 
 logger = logging.getLogger(__name__)
 
@@ -829,11 +821,12 @@ class ProduitViewSet(viewsets.ModelViewSet):
         queryset = super().get_queryset()
         
         # Annoter avec les prix agrégés pour toutes les actions (list et retrieve)
+        # Utiliser filter pour ne compter que les prix disponibles
         queryset = queryset.annotate(
-            prix_moyen_agg=Avg('prix__prix_actuel'),
-            prix_min_agg=Min('prix__prix_actuel'),
-            prix_max_agg=Max('prix__prix_actuel'),
-            nombre_magasins_agg=Count('prix', distinct=True)
+            prix_moyen_agg=Avg('prix__prix_actuel', filter=Q(prix__est_disponible=True)),
+            prix_min_agg=Min('prix__prix_actuel', filter=Q(prix__est_disponible=True)),
+            prix_max_agg=Max('prix__prix_actuel', filter=Q(prix__est_disponible=True)),
+            nombre_magasins_agg=Count('prix', distinct=True, filter=Q(prix__est_disponible=True))
         )
         
         return queryset
@@ -887,40 +880,66 @@ class ProduitViewSet(viewsets.ModelViewSet):
                 f"Temps écoulé: {elapsed:.3f}s",
                 exc_info=True
             )
-            raise
+            # Retourner une réponse d'erreur au lieu de lever l'exception
+            return Response(
+                {
+                    'erreur': 'Erreur lors de la récupération des produits',
+                    'detail': str(e) if settings.DEBUG else 'Une erreur est survenue'
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
     def get_object(self):
         """Surcharge pour s'assurer que l'objet a les annotations"""
-        obj = super().get_object()
-        # S'assurer que les annotations sont présentes même pour retrieve
-        if not hasattr(obj, 'prix_moyen_agg'):
-            from django.db.models import Avg, Min, Max, Count
-            queryset = self.get_queryset().filter(pk=obj.pk)
-            obj = queryset.first() or obj
-        return obj
+        try:
+            obj = super().get_object()
+            # S'assurer que les annotations sont présentes même pour retrieve
+            if not hasattr(obj, 'prix_moyen_agg'):
+                queryset = self.get_queryset().filter(pk=obj.pk)
+                annotated_obj = queryset.first()
+                if annotated_obj:
+                    obj = annotated_obj
+            return obj
+        except Exception as e:
+            logger.error(f"Erreur lors de la récupération de l'objet produit: {e}", exc_info=True)
+            raise
     
     @action(detail=True, methods=['get'])
     def avis(self, request, pk=None):
         """Retourne les avis d'un produit"""
-        produit = self.get_object()
-        avis = produit.avis.select_related('utilisateur').all()
-        
-        page = self.paginate_queryset(avis)
-        if page is not None:
-            serializer = AvisProduitSerializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
-        
-        serializer = AvisProduitSerializer(avis, many=True)
-        return Response(serializer.data)
+        try:
+            produit = self.get_object()
+            avis = produit.avis.select_related('utilisateur').all()
+            
+            page = self.paginate_queryset(avis)
+            if page is not None:
+                serializer = AvisProduitSerializer(page, many=True)
+                return self.get_paginated_response(serializer.data)
+            
+            serializer = AvisProduitSerializer(avis, many=True)
+            return Response(serializer.data)
+        except Exception as e:
+            logger.error(f"Erreur lors de la récupération des avis du produit {pk}: {e}", exc_info=True)
+            return Response(
+                {'erreur': 'Erreur lors de la récupération des avis'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
     @action(detail=True, methods=['get'])
     def historique_prix(self, request, pk=None):
         """Retourne l'historique des prix du produit"""
-        produit = self.get_object()
-        historique = produit.historique_prix.all().order_by('-date')[:30]  # 30 derniers jours
-        
-        serializer = HistoriquePrixProduitSerializer(historique, many=True)
-        return Response(serializer.data)
+        try:
+            produit = self.get_object()
+            historique = produit.historique_prix.all().order_by('-date')[:30]  # 30 derniers jours
+            
+            serializer = HistoriquePrixProduitSerializer(historique, many=True)
+            return Response(serializer.data)
+        except Exception as e:
+            logger.error(f"Erreur lors de la récupération de l'historique des prix du produit {pk}: {e}", exc_info=True)
+            return Response(
+                {'erreur': 'Erreur lors de la récupération de l\'historique des prix'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
     @action(detail=False, methods=['get'])
     def tous(self, request):
@@ -943,12 +962,12 @@ class ProduitViewSet(viewsets.ModelViewSet):
                 'caracteristiques', 'avis'
             ).all()  # Pas de filtre est_actif
             
-            # Annoter avec les prix agrégés
+            # Annoter avec les prix agrégés (seulement les prix disponibles)
             queryset = queryset.annotate(
-                prix_moyen_agg=Avg('prix__prix_actuel'),
-                prix_min_agg=Min('prix__prix_actuel'),
-                prix_max_agg=Max('prix__prix_actuel'),
-                nombre_magasins_agg=Count('prix', distinct=True)
+                prix_moyen_agg=Avg('prix__prix_actuel', filter=Q(prix__est_disponible=True)),
+                prix_min_agg=Min('prix__prix_actuel', filter=Q(prix__est_disponible=True)),
+                prix_max_agg=Max('prix__prix_actuel', filter=Q(prix__est_disponible=True)),
+                nombre_magasins_agg=Count('prix', distinct=True, filter=Q(prix__est_disponible=True))
             )
             
             total_count = queryset.count()
@@ -1466,12 +1485,12 @@ class ProduitViewSet(viewsets.ModelViewSet):
                 utilisateur=request.user
             ).select_related('produit', 'produit__categorie', 'produit__marque', 'produit__unite_mesure')
             
-            # Annoter avec les prix agrégés
+            # Annoter avec les prix agrégés (seulement les prix disponibles)
             likes = likes.annotate(
-                prix_moyen_agg=Avg('produit__prix__prix_actuel'),
-                prix_min_agg=Min('produit__prix__prix_actuel'),
-                prix_max_agg=Max('produit__prix__prix_actuel'),
-                nombre_magasins_agg=Count('produit__prix', distinct=True)
+                prix_moyen_agg=Avg('produit__prix__prix_actuel', filter=Q(produit__prix__est_disponible=True)),
+                prix_min_agg=Min('produit__prix__prix_actuel', filter=Q(produit__prix__est_disponible=True)),
+                prix_max_agg=Max('produit__prix__prix_actuel', filter=Q(produit__prix__est_disponible=True)),
+                nombre_magasins_agg=Count('produit__prix', distinct=True, filter=Q(produit__prix__est_disponible=True))
             ).order_by('-date_creation')
             
             total_count = likes.count()

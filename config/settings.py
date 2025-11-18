@@ -311,12 +311,17 @@ else:
         if os.getenv('DATABASE_URL'):
             # Détecter si on est sur Railway ou en local
             # Railway utilise des domaines .railway.internal ou .railway.app
-            database_url = os.getenv('DATABASE_URL')
-            is_railway = '.railway.internal' in database_url or '.railway.app' in database_url or 'railway' in database_url.lower()
-            is_localhost = 'localhost' in database_url or '127.0.0.1' in database_url
+            database_url = os.getenv('DATABASE_URL', '').lower()
+            is_railway = '.railway.internal' in database_url or '.railway.app' in database_url or 'railway' in database_url
+            is_localhost = 'localhost' in database_url or '127.0.0.1' in database_url or '::1' in database_url
             
-            # SSL requis seulement pour Railway/Heroku, pas pour localhost
+            # SSL requis seulement pour Railway/Heroku distant, JAMAIS pour localhost
+            # Même si Railway CLI injecte DATABASE_URL, si c'est localhost, on désactive SSL
             ssl_required = is_railway and not is_localhost
+            
+            # Forcer la désactivation SSL si c'est clairement localhost
+            if is_localhost:
+                ssl_required = False
             
             DATABASES = {
                 'default': dj_database_url.config(
@@ -326,6 +331,12 @@ else:
                     ssl_require=ssl_required
                 )
             }
+            
+            # Si c'est localhost, forcer sslmode=disable dans OPTIONS
+            if is_localhost and DATABASES['default'].get('OPTIONS'):
+                DATABASES['default']['OPTIONS']['sslmode'] = 'disable'
+            elif is_localhost:
+                DATABASES['default']['OPTIONS'] = {'sslmode': 'disable'}
             # Déterminer DB_ENGINE à partir de l'ENGINE configuré
             db_engine_name = DATABASES['default'].get('ENGINE', '')
             if 'mysql' in db_engine_name:
