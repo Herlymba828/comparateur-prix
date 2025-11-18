@@ -73,22 +73,41 @@ class PrixViewSet(viewsets.ModelViewSet):
         return PrixSerializer
     
     def get_queryset(self):
-        requete = super().get_queryset()
-        
-        # Filtrage par géolocalisation si disponible
-        position_utilisateur = self.request.query_params.get('position')
-        rayon_km = self.request.query_params.get('rayon_km', 10)
-        
-        if position_utilisateur:
-            # Implémentation simplifiée - à compléter avec PostGIS
-            try:
-                latitude, longitude = map(float, position_utilisateur.split(','))
-                # Filtrage géographique à implémenter
-                _ = (latitude, longitude)  # évite l'avertissement variable non utilisée
-            except (ValueError, AttributeError):
-                pass
-        
-        return requete
+        try:
+            requete = super().get_queryset()
+            
+            # Filtrage par géolocalisation si disponible
+            position_utilisateur = self.request.query_params.get('position')
+            rayon_km = self.request.query_params.get('rayon_km', 10)
+            
+            if position_utilisateur:
+                # Implémentation simplifiée - à compléter avec PostGIS
+                try:
+                    latitude, longitude = map(float, position_utilisateur.split(','))
+                    # Filtrage géographique à implémenter
+                    _ = (latitude, longitude)  # évite l'avertissement variable non utilisée
+                except (ValueError, AttributeError):
+                    pass
+            
+            return requete
+        except Exception as e:
+            logger.error(f"Erreur dans PrixViewSet.get_queryset: {e}", exc_info=True)
+            # Retourner un queryset vide en cas d'erreur
+            return Prix.objects.none()
+    
+    def list(self, request, *args, **kwargs):
+        """Liste des prix avec gestion d'erreurs"""
+        try:
+            return super().list(request, *args, **kwargs)
+        except Exception as e:
+            logger.error(f"Erreur lors de la récupération de la liste des prix: {e}", exc_info=True)
+            return Response(
+                {
+                    'erreur': 'Erreur lors de la récupération des prix',
+                    'detail': str(e) if settings.DEBUG else 'Une erreur est survenue'
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
     @action(detail=False, methods=['get'])
     def meilleurs_prix(self, request):
@@ -545,22 +564,32 @@ class StatistiquesPrixViewSet(viewsets.ViewSet):
     
     def list(self, request):
         """Statistiques générales sur les prix"""
-        statistiques = {
-            'total_prix': Prix.objects.filter(est_disponible=True).count(),
-            'prix_moyen_global': Prix.objects.filter(
-                est_disponible=True
-            ).aggregate(avg=Avg('prix_actuel'))['avg'],
-            'promotions_actives': Prix.objects.filter(
-                est_promotion=True
-            ).count(),
-            'produits_sans_prix': Prix.objects.filter(
-                est_disponible=False
-            ).count(),
-            'evolution_7_jours': self.get_evolution_prix(7),
-            'top_promotions': self.get_top_promotions(),
-        }
-        
-        return Response(statistiques)
+        try:
+            statistiques = {
+                'total_prix': Prix.objects.filter(est_disponible=True).count(),
+                'prix_moyen_global': Prix.objects.filter(
+                    est_disponible=True
+                ).aggregate(avg=Avg('prix_actuel'))['avg'] or 0,
+                'promotions_actives': Prix.objects.filter(
+                    est_promotion=True
+                ).count(),
+                'produits_sans_prix': Prix.objects.filter(
+                    est_disponible=False
+                ).count(),
+                'evolution_7_jours': self.get_evolution_prix(7),
+                'top_promotions': self.get_top_promotions(),
+            }
+            
+            return Response(statistiques)
+        except Exception as e:
+            logger.error(f"Erreur dans StatistiquesPrixViewSet.list: {e}", exc_info=True)
+            return Response(
+                {
+                    'erreur': 'Erreur lors de la récupération des statistiques de prix',
+                    'detail': str(e) if settings.DEBUG else 'Une erreur est survenue'
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
     def get_evolution_prix(self, jours):
         """Calcule l'évolution des prix sur N jours"""
@@ -677,24 +706,34 @@ class HomologationsStatsViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticatedOrReadOnly]
 
     def list(self, request):
-        from django.db.models import Count
-        par_dates = (PrixHomologue.objects
-                     .values('date_publication')
-                     .annotate(count=Count('id'))
-                     .order_by('-date_publication')[:10])
+        try:
+            from django.db.models import Count
+            par_dates = (PrixHomologue.objects
+                         .values('date_publication')
+                         .annotate(count=Count('id'))
+                         .order_by('-date_publication')[:10])
 
-        par_localisation = (PrixHomologue.objects
-                             .values('localisation')
-                             .annotate(count=Count('id'))
-                             .order_by('-count'))
+            par_localisation = (PrixHomologue.objects
+                                 .values('localisation')
+                                 .annotate(count=Count('id'))
+                                 .order_by('-count'))
 
-        total = PrixHomologue.objects.count()
+            total = PrixHomologue.objects.count()
 
-        return Response({
-            'total': total,
-            'par_dates': list(par_dates),
-            'par_localisation': list(par_localisation),
-        })
+            return Response({
+                'total': total,
+                'par_dates': list(par_dates),
+                'par_localisation': list(par_localisation),
+            })
+        except Exception as e:
+            logger.error(f"Erreur dans HomologationsStatsViewSet.list: {e}", exc_info=True)
+            return Response(
+                {
+                    'erreur': 'Erreur lors de la récupération des statistiques d\'homologations',
+                    'detail': str(e) if settings.DEBUG else 'Une erreur est survenue'
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class OffreViewSet(viewsets.ReadOnlyModelViewSet):
@@ -1221,30 +1260,40 @@ class ProduitViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'], url_path='populaires')
     def populaires(self, request):
         """Retourne les produits les plus populaires (activités/prix disponibles)."""
-        queryset = (
-            self.get_queryset()
-            .annotate(
-                nb_prix=Count('prix', distinct=True),
-                nb_avis=Count('avis', distinct=True),
-            )
-            .filter(nb_prix__gt=0)
-            .annotate(score_popularite=F('nb_prix') * 2 + F('nb_avis'))
-            .order_by('-score_popularite', '-nb_prix', '-date_creation')
-        )
-
-        page = self.paginate_queryset(queryset)
-        if page is not None:
-            serializer = ProduitListSerializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
-
-        limit = request.query_params.get('limit')
         try:
-            limit_value = max(1, min(int(limit), 100)) if limit else 12
-        except (TypeError, ValueError):
-            limit_value = 12
+            queryset = (
+                self.get_queryset()
+                .annotate(
+                    nb_prix=Count('prix', distinct=True),
+                    nb_avis=Count('avis', distinct=True),
+                )
+                .filter(nb_prix__gt=0)
+                .annotate(score_popularite=F('nb_prix') * 2 + F('nb_avis'))
+                .order_by('-score_popularite', '-nb_prix', '-date_creation')
+            )
 
-        serializer = ProduitListSerializer(queryset[:limit_value], many=True)
-        return Response(serializer.data)
+            page = self.paginate_queryset(queryset)
+            if page is not None:
+                serializer = ProduitListSerializer(page, many=True)
+                return self.get_paginated_response(serializer.data)
+
+            limit = request.query_params.get('limit')
+            try:
+                limit_value = max(1, min(int(limit), 100)) if limit else 12
+            except (TypeError, ValueError):
+                limit_value = 12
+
+            serializer = ProduitListSerializer(queryset[:limit_value], many=True)
+            return Response(serializer.data)
+        except Exception as e:
+            logger.error(f"Erreur dans ProduitViewSet.populaires: {e}", exc_info=True)
+            return Response(
+                {
+                    'erreur': 'Erreur lors de la récupération des produits populaires',
+                    'detail': str(e) if settings.DEBUG else 'Une erreur est survenue'
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
     @action(detail=False, methods=['get'])
     def suggestions(self, request):

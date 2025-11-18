@@ -19,4 +19,6 @@ urlpatterns = [
     path('compare/', compare_offers, name='api-compare-offers'),
     path('nearby/prix/', prix_proches_public, name='api-nearby-prix'),
     path('stats/prix/', stats_prix, name='api-stats-prix'),
+    # Alias pour stats homologations
+    path('stats/homologations/', homologations_stats, name='api-stats-homologations'),
 ]

@@ -23,4 +23,7 @@ urlpatterns = [
     # Alias pour compatibilité frontend
     path('populaires/', views.ProduitViewSet.as_view({'get': 'populaires'}), name='produits-populaires-alias'),
     path('categories/', views.CategorieViewSet.as_view({'get': 'list'}), name='categories-alias'),
+    # Alias pour endpoints stats
+    path('stats/prix/', views.StatistiquesPrixViewSet.as_view({'get': 'list'}), name='stats-prix-alias'),
+    path('stats/homologations/', views.HomologationsStatsViewSet.as_view({'get': 'list'}), name='stats-homologations-alias'),
 ]
