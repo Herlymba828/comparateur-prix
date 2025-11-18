@@ -48,15 +48,50 @@ except ImportError:
     if str(script_dir) not in sys.path:
         sys.path.insert(0, str(script_dir))
     
-    # Imports absolus
-    from data_saver import DataSaver
-    from config import (
-        DEFAULT_BASE_URL, DEFAULT_USER_AGENT, REQUEST_DELAY_SEC, REQUEST_TIMEOUT,
-        MAX_RETRIES, BACKOFF_SEC, HTTP_PROXY, LOG_FILE, STATE_FILE, CHECKPOINT_PATH,
-        RAW_DIR, DEFAULT_REPORT_OUT, SAVE_TO_DB, RESPECT_ROBOTS, SKIP_UNCHANGED,
-        PRIX_HOMOLOGUE_URL, LISTE_PRODUIT_URL, PRODUIT_PETROLIER_URL,
-        OFF_ENABLE, OFF_TIMEOUT, OFF_MIN_SCORE
-    )
+    # Imports absolus - utiliser importlib pour éviter les conflits avec config Django
+    import importlib.util
+    
+    # Charger data_saver
+    data_saver_path = script_dir / 'data_saver.py'
+    if data_saver_path.exists():
+        spec_ds = importlib.util.spec_from_file_location("data_saver", data_saver_path)
+        data_saver_module = importlib.util.module_from_spec(spec_ds)
+        spec_ds.loader.exec_module(data_saver_module)
+        DataSaver = data_saver_module.DataSaver
+    else:
+        raise ImportError(f"Module data_saver introuvable: {data_saver_path}")
+    
+    # Charger config (scripts/config.py, pas config Django)
+    config_path = script_dir / 'config.py'
+    if config_path.exists():
+        spec_cfg = importlib.util.spec_from_file_location("scripts_config", config_path)
+        config_module = importlib.util.module_from_spec(spec_cfg)
+        spec_cfg.loader.exec_module(config_module)
+        
+        # Importer les variables depuis le module chargé
+        DEFAULT_BASE_URL = config_module.DEFAULT_BASE_URL
+        DEFAULT_USER_AGENT = config_module.DEFAULT_USER_AGENT
+        REQUEST_DELAY_SEC = config_module.REQUEST_DELAY_SEC
+        REQUEST_TIMEOUT = config_module.REQUEST_TIMEOUT
+        MAX_RETRIES = config_module.MAX_RETRIES
+        BACKOFF_SEC = config_module.BACKOFF_SEC
+        HTTP_PROXY = config_module.HTTP_PROXY
+        LOG_FILE = config_module.LOG_FILE
+        STATE_FILE = config_module.STATE_FILE
+        CHECKPOINT_PATH = config_module.CHECKPOINT_PATH
+        RAW_DIR = config_module.RAW_DIR
+        DEFAULT_REPORT_OUT = config_module.DEFAULT_REPORT_OUT
+        SAVE_TO_DB = config_module.SAVE_TO_DB
+        RESPECT_ROBOTS = config_module.RESPECT_ROBOTS
+        SKIP_UNCHANGED = config_module.SKIP_UNCHANGED
+        PRIX_HOMOLOGUE_URL = config_module.PRIX_HOMOLOGUE_URL
+        LISTE_PRODUIT_URL = config_module.LISTE_PRODUIT_URL
+        PRODUIT_PETROLIER_URL = config_module.PRODUIT_PETROLIER_URL
+        OFF_ENABLE = config_module.OFF_ENABLE
+        OFF_TIMEOUT = config_module.OFF_TIMEOUT
+        OFF_MIN_SCORE = config_module.OFF_MIN_SCORE
+    else:
+        raise ImportError(f"Module config introuvable: {config_path}")
 
 def setup_logging(debug: bool = False) -> logging.Logger:
     """Configure le système de journalisation.
@@ -1750,9 +1785,10 @@ class DgccrfScraper:
             import django  # noqa
             os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
             django.setup()
+            logger.debug("Django initialisé avec succès")
             return True
         except Exception as exc:
-            logger.error(f"Impossible d'initialiser Django: {exc}")
+            logger.error(f"Impossible d'initialiser Django: {exc}", exc_info=True)
             return False
 
     def persist_items(self, items: List[Dict[str, Any]]) -> Tuple[int, int]:
@@ -1761,9 +1797,20 @@ class DgccrfScraper:
             from apps.magasins.models import Magasin, Ville, Region
             from django.utils.text import slugify
             from decimal import Decimal
+            from django.db import transaction
         except Exception as exc:
-            logger.error(f"Dépendances Django indisponibles: {exc}")
+            logger.error(f"Dépendances Django indisponibles: {exc}", exc_info=True)
             return (0, 0)
+        
+        if not items:
+            logger.warning("Aucun item à persister")
+            return (0, 0)
+        
+        logger.info(f"Début de la persistance de {len(items)} items")
+        
+        # Afficher un aperçu du premier item pour debug
+        if items:
+            logger.debug(f"Premier item (aperçu): {list(items[0].keys()) if isinstance(items[0], dict) else type(items[0])}")
 
         created_prod = 0
         created_prix = 0
@@ -1772,9 +1819,13 @@ class DgccrfScraper:
         region, _ = Region.objects.get_or_create(nom='Estuaire')
         ville, _ = Ville.objects.get_or_create(nom='Libreville', region=region)
 
-        for it in items:
+        for idx, it in enumerate(items):
+            if not isinstance(it, dict):
+                logger.warning(f"Item {idx} n'est pas un dictionnaire: {type(it)}")
+                continue
             nom = (it.get('nom') or '').strip()
             if not nom:
+                logger.debug(f"Item {idx} ignoré: nom vide")
                 continue
             
             # Validation: s'assurer que les catégories ne sont pas des prix
@@ -2095,21 +2146,28 @@ class DgccrfScraper:
             # Créer/mettre à jour prix
             valeur = it.get('prix_unitaire') or it.get('prix_detail')
             if valeur is not None:
-                p, created_price = Prix.objects.update_or_create(
-                    produit=produit,
-                    magasin=magasin,
-                    defaults={
-                        'prix_actuel': valeur,
-                        'devise': it.get('devise', 'FCFA'),
-                        'type_prix': it.get('type_prix', 'detail'),
-                        'zone': zone,
-                        'source_prix': 'dgccrf',
-                        'est_disponible': True,
-                    }
-                )
-                if created_price:
-                    created_prix += 1
-
+                try:
+                    p, created_price = Prix.objects.update_or_create(
+                        produit=produit,
+                        magasin=magasin,
+                        defaults={
+                            'prix_actuel': valeur,
+                            'devise': it.get('devise', 'FCFA'),
+                            'type_prix': it.get('type_prix', 'detail'),
+                            'zone': zone,
+                            'source_prix': 'dgccrf',
+                            'est_disponible': True,
+                        }
+                    )
+                    if created_price:
+                        created_prix += 1
+                        logger.debug(f"Prix créé pour {nom}: {valeur} {it.get('devise', 'FCFA')}")
+                except Exception as exc:
+                    logger.error(f"Erreur lors de la création du prix pour {nom}: {exc}", exc_info=True)
+            else:
+                logger.debug(f"Pas de prix pour {nom} (prix_unitaire={it.get('prix_unitaire')}, prix_detail={it.get('prix_detail')})")
+        
+        logger.info(f"Persistance terminée: {created_prod} produits créés, {created_prix} prix créés")
         return (created_prod, created_prix)
 
 
@@ -2204,10 +2262,16 @@ def run_scrape(out: Optional[str] = None, limit: Optional[int] = None, sources: 
     created_prod = 0
     created_prix = 0
     if save:
+        logger.info(f"Tentative de sauvegarde en base de données (save={save}, items={len(items)})")
         # Initialiser Django et persister
         if scraper._init_django():
-            created_prod, created_prix = scraper.persist_items(items)
-            logger.info(f"Persisté en DB: {created_prod} produits, {created_prix} prix")
+            logger.info("Django initialisé avec succès, début de la persistance...")
+            try:
+                created_prod, created_prix = scraper.persist_items(items)
+                logger.info(f"Persisté en DB: {created_prod} produits, {created_prix} prix")
+            except Exception as exc:
+                logger.error(f"Erreur lors de la persistance: {exc}", exc_info=True)
+                created_prod, created_prix = 0, 0
             if checkpoint:
                 try:
                     with open(checkpoint, 'r+', encoding='utf-8') as f:
@@ -2218,6 +2282,8 @@ def run_scrape(out: Optional[str] = None, limit: Optional[int] = None, sources: 
                         f.truncate()
                 except Exception:
                     pass
+        else:
+            logger.error("Échec de l'initialisation Django, sauvegarde impossible")
 
     # Option: transformer en format unifié
     export_items = [scraper.build_unified(it) for it in items] if unified else items
