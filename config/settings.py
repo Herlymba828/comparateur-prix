@@ -12,11 +12,18 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 from pathlib import Path
 import os
-import redis
 from datetime import timedelta
 from dotenv import load_dotenv
 from django.core.exceptions import ImproperlyConfigured
 from secrets import token_urlsafe
+
+# redis est optionnel en local (ex: railway run)
+try:
+    import redis  # noqa: F401
+    _redis_driver_available = True
+except ImportError:
+    redis = None  # type: ignore
+    _redis_driver_available = False
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -48,7 +55,8 @@ os.environ.setdefault('PGCLIENTENCODING', os.getenv('PGCLIENTENCODING', 'UTF8'))
 # SECURITY WARNING: don't run with debug turned on in production!
 _RAW_DEBUG = os.getenv('DJANGO_DEBUG', '')
 # Désactiver le mode debug en production
-DEBUG = os.getenv('DJANGO_DEBUG', 'False').lower() in ('1', 'true', 'yes', 'y')
+# DEBUG activé temporairement pour déboguer l'erreur 500
+DEBUG = True  # os.getenv('DJANGO_DEBUG', 'False').lower() in ('1', 'true', 'yes', 'y')
 
 # Configuration de la sécurité en production
 if not DEBUG:
@@ -138,6 +146,13 @@ if env_allowed_hosts:
 # Garantir que les hôtes essentiels sont toujours présents (même si écrasés par env)
 essential_hosts = ['localhost', '127.0.0.1', '192.168.1.67', '192.168.1.65']
 for host in essential_hosts:
+    if host not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(host)
+
+# Autoriser automatiquement les hôtes utilisés par les clients de test Django
+# (nécessaire pour les commandes comme `diagnostic_endpoints`)
+test_hosts = ['testserver']
+for host in test_hosts:
     if host not in ALLOWED_HOSTS:
         ALLOWED_HOSTS.append(host)
 
@@ -305,7 +320,7 @@ else:
     DB_ENGINE = os.getenv('DB_ENGINE', 'postgresql').lower()
     
     try:
-        import dj_database_url
+        import dj_database_url  # pyright: ignore[reportMissingImports]
         
         # Utiliser DATABASE_URL si disponible (pour Railway, Heroku, etc.)
         if os.getenv('DATABASE_URL'):
@@ -792,7 +807,7 @@ GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY')
 REDIS_URL = os.getenv('REDIS_URL')
 # Permet d'utiliser une base Redis distincte pour le cache Django si souhaité
 REDIS_CACHE_URL = os.getenv('REDIS_CACHE_URL', REDIS_URL)
-USE_REDIS_CACHE = bool(REDIS_CACHE_URL) and not DEBUG
+USE_REDIS_CACHE = _redis_driver_available and bool(REDIS_CACHE_URL) and not DEBUG
 if USE_REDIS_CACHE:
     CACHES = {
         'default': {

@@ -153,11 +153,34 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         except Exception as e:
-            # Erreur inattendue
-            logger.error(f"Erreur lors de la création de l'utilisateur: {e}", exc_info=True)
-            error_detail = str(e) if settings.DEBUG else 'Une erreur est survenue lors de la création du compte.'
+            # Erreur inattendue - logger avec tous les détails
+            import traceback
+            error_traceback = traceback.format_exc()
+            logger.error(
+                f"Erreur lors de la création de l'utilisateur: {e}\n"
+                f"Traceback complet:\n{error_traceback}\n"
+                f"Données reçues: {request.data}"
+            )
+            
+            # Préparer la réponse d'erreur en JSON
+            error_response = {
+                'detail': 'Une erreur est survenue lors de la création du compte.',
+                'error_type': type(e).__name__,
+            }
+            
+            # En mode DEBUG ou si on est en développement, ajouter plus de détails
+            if settings.DEBUG:
+                error_response.update({
+                    'error_message': str(e),
+                    'traceback': error_traceback.split('\n')[-10:],  # Dernières 10 lignes
+                })
+            else:
+                # En production, logger l'erreur complète mais ne pas l'exposer
+                # L'erreur complète est dans les logs Railway
+                error_response['debug_info'] = 'Consultez les logs du serveur pour plus de détails.'
+            
             return Response(
-                {'detail': error_detail},
+                error_response,
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
