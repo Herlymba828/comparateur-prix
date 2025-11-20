@@ -6,8 +6,8 @@ from .models import Utilisateur, ProfilUtilisateur, Abonnement, HistoriqueRemise
 class InscriptionSerializer(serializers.ModelSerializer):
     """Serializer pour l'inscription des utilisateurs"""
     
-    password = serializers.CharField(write_only=True, min_length=8)
-    password_confirmation = serializers.CharField(write_only=True)
+    password = serializers.CharField(write_only=True, min_length=8, style={'input_type': 'password'})
+    password_confirmation = serializers.CharField(write_only=True, style={'input_type': 'password'})
     
     class Meta:
         model = Utilisateur
@@ -16,27 +16,78 @@ class InscriptionSerializer(serializers.ModelSerializer):
             'first_name', 'last_name', 'type_utilisateur', 'telephone',
             'code_postal', 'ville', 'date_naissance'
         ]
+        extra_kwargs = {
+            'email': {'required': True},
+            'username': {'required': True},
+        }
+    
+    def validate_username(self, value):
+        """Valider l'unicité du username"""
+        if Utilisateur.objects.filter(username__iexact=value).exists():
+            raise serializers.ValidationError(_('Un utilisateur avec ce nom d\'utilisateur existe déjà.'))
+        return value
+    
+    def validate_email(self, value):
+        """Valider l'unicité de l'email"""
+        if Utilisateur.objects.filter(email__iexact=value).exists():
+            raise serializers.ValidationError(_('Un utilisateur avec cet email existe déjà.'))
+        return value.lower().strip() if value else value
+    
+    def validate_telephone(self, value):
+        """Valider et normaliser le numéro de téléphone"""
+        if value:
+            # Normaliser le numéro (supprimer espaces, tirets, etc.)
+            value = ''.join(filter(str.isdigit, value))
+            if not value.startswith('+'):
+                # Si pas de préfixe international, ajouter +33 pour la France
+                if value.startswith('0'):
+                    value = '+33' + value[1:]
+                else:
+                    value = '+33' + value
+        return value
     
     def validate(self, attrs):
-        if attrs['password'] != attrs.pop('password_confirmation'):
-            raise serializers.ValidationError({
-                'password': _('Les mots de passe ne correspondent pas.')
-            })
+        """Validation globale"""
+        password = attrs.get('password')
+        password_confirmation = attrs.get('password_confirmation')
         
-        if Utilisateur.objects.filter(email=attrs['email']).exists():
+        if password and password_confirmation:
+            if password != password_confirmation:
+                raise serializers.ValidationError({
+                    'password_confirmation': _('Les mots de passe ne correspondent pas.')
+                })
+        
+        # Vérifications supplémentaires d'unicité (au cas où)
+        email = attrs.get('email')
+        username = attrs.get('username')
+        
+        if email and Utilisateur.objects.filter(email__iexact=email).exists():
             raise serializers.ValidationError({
                 'email': _('Un utilisateur avec cet email existe déjà.')
+            })
+        
+        if username and Utilisateur.objects.filter(username__iexact=username).exists():
+            raise serializers.ValidationError({
+                'username': _('Un utilisateur avec ce nom d\'utilisateur existe déjà.')
             })
         
         return attrs
 
     def create(self, validated_data):
-        # Retirer le champ de confirmation et hasher le mot de passe
+        """Créer un nouvel utilisateur avec mot de passe hashé"""
+        # Retirer le champ de confirmation
         validated_data.pop('password_confirmation', None)
         password = validated_data.pop('password')
+        
+        # Créer l'utilisateur avec les données validées
         user = Utilisateur(**validated_data)
+        # Hasher le mot de passe
         user.set_password(password)
+        # L'utilisateur est inactif par défaut jusqu'à vérification email
+        user.is_active = True  # Ou False selon votre logique métier
+        # Sauvegarder l'utilisateur (les signaux créeront le profil et l'abonnement)
         user.save()
+        
         return user
 
 class HistoriqueConnexionSerializer(serializers.ModelSerializer):

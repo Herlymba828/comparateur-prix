@@ -1,4 +1,4 @@
-from rest_framework import status, viewsets, permissions
+from rest_framework import status, viewsets, permissions, serializers
 from rest_framework.throttling import AnonRateThrottle
 from rest_framework.views import APIView
 
@@ -74,9 +74,18 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         """Filtrage personnalisé selon les permissions"""
+        # Pour la création, on n'a pas besoin du queryset optimisé
+        if self.action == 'create':
+            return Utilisateur.objects.all()
+        
+        # Pour les autres actions, utiliser le queryset optimisé
+        queryset = Utilisateur.objects.select_related('profil').prefetch_related(
+            'profil__magasins_preferes', 'profil__categories_preferees_remises'
+        )
+        
         if self.request.user.is_staff:
-            return self.queryset.all()
-        return self.queryset.filter(id=self.request.user.id)
+            return queryset.all()
+        return queryset.filter(id=self.request.user.id)
     
     def get_serializer_class(self):
         """Utiliser différents serializers selon l'action"""
@@ -87,6 +96,70 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         elif self.action in ['update', 'partial_update']:
             return MiseAJourUtilisateurSerializer
         return self.serializer_class
+    
+    def create(self, request, *args, **kwargs):
+        """Créer un nouvel utilisateur avec gestion d'erreurs robuste"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        try:
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            
+            # Créer l'utilisateur dans une transaction
+            with transaction.atomic():
+                user = serializer.save()
+                
+                # Rafraîchir l'utilisateur depuis la DB pour avoir le profil créé par les signaux
+                user.refresh_from_db()
+                
+                # Vérifier que le profil a été créé (par signal)
+                try:
+                    profil = user.profil
+                except ProfilUtilisateur.DoesNotExist:
+                    # Si le profil n'existe pas, le créer manuellement
+                    logger.warning(f"Profil non créé par signal pour {user.username}, création manuelle")
+                    ProfilUtilisateur.objects.create(utilisateur=user)
+                    user.refresh_from_db()
+            
+            # Sérialiser la réponse avec UtilisateurSerializer pour avoir toutes les infos
+            response_serializer = UtilisateurSerializer(user)
+            
+            # Préparer la réponse
+            response_data = response_serializer.data
+            
+            # Ajouter les tokens JWT si activé
+            if getattr(settings, 'USE_JWT_AUTH', False) and HAS_JWT and RefreshToken is not None:
+                try:
+                    refresh = RefreshToken.for_user(user)
+                    response_data.update({
+                        'refresh': str(refresh),
+                        'access': str(refresh.access_token),
+                    })
+                except Exception as e:
+                    logger.warning(f"Erreur lors de la génération des tokens JWT: {e}")
+            
+            # Indiquer si l'activation est en attente
+            if not getattr(user, 'est_verifie', False):
+                response_data['activation_pending'] = True
+            
+            return Response(response_data, status=status.HTTP_201_CREATED)
+            
+        except serializers.ValidationError as e:
+            # Erreurs de validation du serializer
+            logger.error(f"Erreur de validation lors de l'inscription: {e}")
+            return Response(
+                e.detail if hasattr(e, 'detail') else {'detail': 'Erreur de validation', 'errors': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            # Erreur inattendue
+            logger.error(f"Erreur lors de la création de l'utilisateur: {e}", exc_info=True)
+            error_detail = str(e) if settings.DEBUG else 'Une erreur est survenue lors de la création du compte.'
+            return Response(
+                {'detail': error_detail},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     @action(detail=False, methods=['get'])
     def moi(self, request):
