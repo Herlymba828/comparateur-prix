@@ -55,8 +55,7 @@ os.environ.setdefault('PGCLIENTENCODING', os.getenv('PGCLIENTENCODING', 'UTF8'))
 # SECURITY WARNING: don't run with debug turned on in production!
 _RAW_DEBUG = os.getenv('DJANGO_DEBUG', '')
 # Désactiver le mode debug en production
-# DEBUG activé temporairement pour déboguer l'erreur 500
-DEBUG = True  # os.getenv('DJANGO_DEBUG', 'False').lower() in ('1', 'true', 'yes', 'y')
+DEBUG = os.getenv('DJANGO_DEBUG', 'False').lower() in ('1', 'true', 'yes', 'y')
 
 # Configuration de la sécurité en production
 if not DEBUG:
