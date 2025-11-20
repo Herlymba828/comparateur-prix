@@ -179,9 +179,9 @@ class UniteMesureSerializer(serializers.ModelSerializer):
 
 
 class CategorieSerializer(serializers.ModelSerializer):
-    niveau = serializers.ReadOnlyField()
-    est_racine = serializers.ReadOnlyField()
-    chemin = serializers.ReadOnlyField()
+    niveau = serializers.SerializerMethodField()
+    est_racine = serializers.SerializerMethodField()
+    chemin = serializers.SerializerMethodField()
     nombre_produits = serializers.SerializerMethodField()
     sous_categories = serializers.SerializerMethodField()
     
@@ -194,12 +194,30 @@ class CategorieSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['date_creation', 'date_modification']
     
+    def get_niveau(self, obj):
+        """Retourne le niveau de la catégorie dans la hiérarchie"""
+        return obj.get_niveau()
+    
+    def get_est_racine(self, obj):
+        """Indique si la catégorie est une catégorie racine"""
+        return obj.est_racine
+    
+    def get_chemin(self, obj):
+        """Retourne le chemin complet de la catégorie"""
+        return obj.get_chemin()
+    
     def get_nombre_produits(self, obj):
+        """Retourne le nombre de produits actifs dans cette catégorie"""
         return obj.produits.filter(est_actif=True).count()
     
     def get_sous_categories(self, obj):
+        """Retourne les sous-catégories de manière récursive"""
         sous_cats = obj.sous_categories.all()
-        return CategorieSerializer(sous_cats, many=True).data if sous_cats.exists() else []
+        if sous_cats.exists():
+            # Limiter la profondeur de récursion pour éviter les problèmes de performance
+            # et les récursions infinies en cas de relations circulaires
+            return CategorieSerializer(sous_cats, many=True).data
+        return []
 
 
 class MarqueSerializer(serializers.ModelSerializer):

@@ -766,7 +766,10 @@ class OffreViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class CategorieViewSet(viewsets.ModelViewSet):
-    queryset = Categorie.objects.prefetch_related('sous_categories').all()
+    queryset = Categorie.objects.prefetch_related(
+        'sous_categories',
+        'produits'
+    ).all()
     serializer_class = CategorieSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
@@ -807,7 +810,14 @@ class CategorieViewSet(viewsets.ModelViewSet):
     def racines(self, request):
         """Retourne uniquement les catégories racines"""
         try:
-            categories_racines = Categorie.objects.filter(parent__isnull=True)
+            # Optimiser le queryset pour éviter les requêtes N+1
+            categories_racines = Categorie.objects.filter(
+                parent__isnull=True
+            ).prefetch_related(
+                'sous_categories',
+                'produits'
+            ).order_by('ordre', 'nom')
+            
             serializer = self.get_serializer(categories_racines, many=True)
             return Response(serializer.data)
         except Exception as e:
