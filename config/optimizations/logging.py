@@ -42,5 +42,8 @@ def get_logging_config():
         'loggers': {
             'django.request': {'level': 'WARNING', 'handlers': ['console'], 'propagate': False},
             'django.db.backends': {'level': os.getenv('LOG_SQL_LEVEL', 'WARNING'), 'handlers': ['console'], 'propagate': False},
+            # Logger spécifique pour l'app utilisateurs - niveau ERROR pour capturer toutes les erreurs
+            'apps.utilisateurs': {'level': 'ERROR', 'handlers': ['console'], 'propagate': False},
+            'apps.utilisateurs.views': {'level': 'ERROR', 'handlers': ['console'], 'propagate': False},
         },
     }

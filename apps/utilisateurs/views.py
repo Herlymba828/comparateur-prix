@@ -100,7 +100,12 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         """Créer un nouvel utilisateur avec gestion d'erreurs robuste"""
         import logging
+        import sys
         logger = logging.getLogger(__name__)
+        
+        # Log de début pour confirmer que la requête arrive
+        print(f"[INFO] POST /api/utilisateurs/ - Début création utilisateur", file=sys.stdout, flush=True)
+        print(f"[INFO] Données reçues: {request.data}", file=sys.stdout, flush=True)
         
         try:
             serializer = self.get_serializer(data=request.data)
@@ -155,12 +160,22 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         except Exception as e:
             # Erreur inattendue - logger avec tous les détails
             import traceback
+            import sys
             error_traceback = traceback.format_exc()
-            logger.error(
-                f"Erreur lors de la création de l'utilisateur: {e}\n"
+            error_message = (
+                f"❌ ERREUR 500 - Création utilisateur échouée\n"
+                f"Type: {type(e).__name__}\n"
+                f"Message: {str(e)}\n"
                 f"Traceback complet:\n{error_traceback}\n"
                 f"Données reçues: {request.data}"
             )
+            
+            # Logger l'erreur (pour les fichiers de log si configuré)
+            logger.error(error_message)
+            
+            # Forcer l'affichage sur stdout/stderr pour Railway (visible dans les logs)
+            print(error_message, file=sys.stderr, flush=True)
+            print(f"[ERROR] {type(e).__name__}: {str(e)}", file=sys.stdout, flush=True)
             
             # Préparer la réponse d'erreur en JSON
             error_response = {
