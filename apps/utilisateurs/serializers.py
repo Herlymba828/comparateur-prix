@@ -296,11 +296,22 @@ class StatistiquesFideliteSerializer(serializers.Serializer):
 class UtilisateurSerializer(serializers.ModelSerializer):
     """Serializer complet pour les utilisateurs"""
     
-    profil = ProfilUtilisateurSerializer(read_only=True)
+    profil = ProfilUtilisateurSerializer(read_only=True, allow_null=True)
     statistiques_fidelite = StatistiquesFideliteSerializer(read_only=True)
     age = serializers.ReadOnlyField()
     est_nouveau = serializers.ReadOnlyField()
     est_client_fidele = serializers.ReadOnlyField()
+    
+    def to_representation(self, instance):
+        """Surcharger pour gérer le cas où le profil n'existe pas"""
+        try:
+            return super().to_representation(instance)
+        except Exception as e:
+            # Si erreur lors de l'accès au profil, retourner sans profil
+            data = super().to_representation(instance)
+            if 'profil' in data:
+                data['profil'] = None
+            return data
     
     class Meta:
         model = Utilisateur

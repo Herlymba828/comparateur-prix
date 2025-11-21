@@ -115,19 +115,35 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
             with transaction.atomic():
                 user = serializer.save()
                 
-                # Rafraîchir l'utilisateur depuis la DB pour avoir le profil créé par les signaux
-                user.refresh_from_db()
+                # Attendre que les signaux créent le profil et l'abonnement
+                # Les signaux s'exécutent dans la même transaction
                 
                 # Vérifier que le profil a été créé (par signal)
                 try:
+                    # Utiliser select_related pour éviter les requêtes supplémentaires
+                    user = Utilisateur.objects.select_related('profil').get(pk=user.pk)
                     profil = user.profil
-                except ProfilUtilisateur.DoesNotExist:
+                except (ProfilUtilisateur.DoesNotExist, AttributeError):
                     # Si le profil n'existe pas, le créer manuellement
                     logger.warning(f"Profil non créé par signal pour {user.username}, création manuelle")
-                    ProfilUtilisateur.objects.create(utilisateur=user)
-                    user.refresh_from_db()
+                    try:
+                        ProfilUtilisateur.objects.create(utilisateur=user)
+                        user = Utilisateur.objects.select_related('profil').get(pk=user.pk)
+                    except Exception as e:
+                        logger.error(f"Erreur lors de la création manuelle du profil: {e}")
+                        # Continuer même si le profil n'a pas pu être créé
+                except Exception as e:
+                    # Gérer les erreurs de connexion DB
+                    logger.error(f"Erreur lors de la récupération du profil: {e}", exc_info=True)
+                    # Continuer avec l'utilisateur sans profil
             
             # Sérialiser la réponse avec UtilisateurSerializer pour avoir toutes les infos
+            # Utiliser select_related pour éviter les requêtes supplémentaires
+            try:
+                user = Utilisateur.objects.select_related('profil').get(pk=user.pk)
+            except Exception as e:
+                logger.error(f"Erreur lors de la récupération de l'utilisateur pour sérialisation: {e}", exc_info=True)
+                # Utiliser l'utilisateur tel quel si la requête échoue
             response_serializer = UtilisateurSerializer(user)
             
             # Préparer la réponse

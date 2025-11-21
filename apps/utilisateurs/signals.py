@@ -12,19 +12,31 @@ logger = logging.getLogger(__name__)
 def creer_profil_utilisateur(sender, instance, created, **kwargs):
     """Créer automatiquement un profil lors de la création d'un utilisateur"""
     if created:
-        ProfilUtilisateur.objects.create(utilisateur=instance)
-        logger.info(f"Profil créé pour l'utilisateur {instance.username}")
+        try:
+            # Vérifier si le profil existe déjà (éviter les doublons)
+            if not hasattr(instance, 'profil'):
+                ProfilUtilisateur.objects.create(utilisateur=instance)
+                logger.info(f"Profil créé pour l'utilisateur {instance.username}")
+        except Exception as e:
+            logger.error(f"Erreur lors de la création du profil pour {instance.username}: {e}", exc_info=True)
+            # Ne pas lever l'exception pour éviter de faire échouer la création d'utilisateur
 
 @receiver(post_save, sender=settings.AUTH_USER_MODEL)
 def creer_abonnement_par_defaut(sender, instance, created, **kwargs):
     """Créer un abonnement gratuit par défaut"""
     if created:
-        from datetime import timedelta
-        Abonnement.objects.create(
-            utilisateur=instance,
-            date_fin=timezone.now() + timedelta(days=365*10)  # 10 ans
-        )
-        logger.info(f"Abonnement par défaut créé pour {instance.username}")
+        try:
+            from datetime import timedelta
+            # Vérifier si l'abonnement existe déjà (éviter les doublons)
+            if not hasattr(instance, 'abonnement'):
+                Abonnement.objects.create(
+                    utilisateur=instance,
+                    date_fin=timezone.now() + timedelta(days=365*10)  # 10 ans
+                )
+                logger.info(f"Abonnement par défaut créé pour {instance.username}")
+        except Exception as e:
+            logger.error(f"Erreur lors de la création de l'abonnement pour {instance.username}: {e}", exc_info=True)
+            # Ne pas lever l'exception pour éviter de faire échouer la création d'utilisateur
 
 @receiver(post_save, sender=settings.AUTH_USER_MODEL)
 def rattacher_groupe_user(sender, instance, created, **kwargs):
