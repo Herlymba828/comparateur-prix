@@ -16,11 +16,14 @@ def get_logging_config():
 
     if log_json:
         try:
-            import json_log_formatter  # noqa: F401
+            # Import optionnel pour le formatage JSON des logs
+            # Utiliser __import__ pour éviter l'avertissement du linter si le module n'est pas installé
+            json_log_formatter = __import__('json_log_formatter', fromlist=['JSONFormatter'])
             formatters['json'] = {
                 '()': 'json_log_formatter.JSONFormatter',
             }
-        except Exception:
+        except ImportError:
+            # json_log_formatter n'est pas installé, on continue sans format JSON
             pass
 
     handlers = {
