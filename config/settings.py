@@ -275,6 +275,7 @@ MIDDLEWARE = [
     'django_otp.middleware.OTPMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'config.middleware.JSONExceptionMiddleware',  # Doit être en dernier pour intercepter toutes les exceptions
 ]
 
 ROOT_URLCONF = 'config.urls'
