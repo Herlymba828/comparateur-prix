@@ -1,5 +1,6 @@
 from rest_framework import status, viewsets, permissions, serializers
 from rest_framework.throttling import AnonRateThrottle
+from .throttling import SafeAnonRateThrottle, SafeScopedRateThrottle
 from rest_framework.views import APIView
 
 from rest_framework.decorators import action
@@ -655,7 +656,7 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
 class RegisterView(APIView):
     permission_classes = [permissions.AllowAny]
     authentication_classes = []
-    throttle_classes = [AnonRateThrottle]
+    throttle_classes = [SafeAnonRateThrottle]
     throttle_scope = 'register'
 
     def post(self, request):
@@ -691,7 +692,7 @@ class RegisterView(APIView):
 class ActivateView(APIView):
     permission_classes = [permissions.AllowAny]
     authentication_classes = []
-    throttle_classes = [AnonRateThrottle]
+    throttle_classes = [SafeAnonRateThrottle]
     throttle_scope = 'activate'
 
     def get(self, request):
@@ -753,7 +754,7 @@ def web_activate_uid_page(request, uid: str, token: str):
 class LoginView(APIView):
     permission_classes = [permissions.AllowAny]
     authentication_classes = []
-    throttle_classes = [AnonRateThrottle]
+    throttle_classes = [SafeAnonRateThrottle]
     throttle_scope = 'login'
 
     def _extract_client_ip(self, request):

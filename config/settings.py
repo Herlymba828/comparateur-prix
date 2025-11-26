@@ -643,8 +643,8 @@ REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
     'DEFAULT_THROTTLE_CLASSES': [
-        'rest_framework.throttling.AnonRateThrottle',
-        'rest_framework.throttling.UserRateThrottle',
+        'apps.utilisateurs.throttling.SafeAnonRateThrottle',
+        'apps.utilisateurs.throttling.SafeUserRateThrottle',
     ],
     'DEFAULT_THROTTLE_RATES': {
         'anon': os.getenv('DRF_THROTTLE_ANON', '100/min'),
@@ -730,24 +730,12 @@ else:
     }
 
 # Redis Configuration
+# Note: La configuration CACHES est définie plus bas (ligne ~815)
+# avec un fallback vers LocMemCache si Redis n'est pas disponible
 REDIS_URL = os.getenv('REDIS_URL') or os.getenv('REDISCLOUD_URL') or 'redis://localhost:6379'
 
-# Cache Configuration
-CACHES = {
-    "default": {
-        "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": REDIS_URL,
-        "OPTIONS": {
-            "CLIENT_CLASS": "django_redis.client.DefaultClient",
-            "PASSWORD": os.getenv('REDIS_PASSWORD', ''),
-            "SOCKET_CONNECT_TIMEOUT": 5,
-            "SOCKET_TIMEOUT": 5,
-        },
-        "KEY_PREFIX": "comparateur_prix"
-    }
-}
-
-# Session Cache (optional)
+# Session Cache (utilise le cache configuré plus bas)
+# Si Redis n'est pas disponible, utilise LocMemCache automatiquement
 SESSION_ENGINE = "django.contrib.sessions.backends.cache"
 SESSION_CACHE_ALIAS = "default"
 
@@ -813,19 +801,55 @@ if DEBUG:
 GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY')
 
 # Cache (Redis si disponible en prod, sinon cache local mémoire en dev)
-REDIS_URL = os.getenv('REDIS_URL')
+# Vérifier si Redis est disponible avant de l'utiliser
+REDIS_URL = os.getenv('REDIS_URL') or os.getenv('REDISCLOUD_URL')
 # Permet d'utiliser une base Redis distincte pour le cache Django si souhaité
 REDIS_CACHE_URL = os.getenv('REDIS_CACHE_URL', REDIS_URL)
-USE_REDIS_CACHE = _redis_driver_available and bool(REDIS_CACHE_URL) and not DEBUG
+
+# Tester la connexion Redis si disponible (avec timeout court pour ne pas bloquer le démarrage)
+USE_REDIS_CACHE = False
+if _redis_driver_available and REDIS_CACHE_URL:
+    try:
+        # Tester la connexion Redis avec un timeout très court
+        import redis as redis_client
+        from urllib.parse import urlparse
+        parsed = urlparse(REDIS_CACHE_URL)
+        test_client = redis_client.Redis(
+            host=parsed.hostname or 'localhost',
+            port=parsed.port or 6379,
+            password=parsed.password or os.getenv('REDIS_PASSWORD', ''),
+            socket_connect_timeout=1,  # Timeout très court pour ne pas bloquer
+            socket_timeout=1,
+            decode_responses=False
+        )
+        test_client.ping()
+        test_client.close()
+        USE_REDIS_CACHE = True
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Redis disponible à {REDIS_CACHE_URL}, utilisation du cache Redis")
+    except Exception as e:
+        # Redis n'est pas disponible, utiliser le cache local
+        USE_REDIS_CACHE = False
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Redis non disponible à {REDIS_CACHE_URL}: {e}. Utilisation du cache local (LocMemCache)")
+
 if USE_REDIS_CACHE:
     CACHES = {
         'default': {
             'BACKEND': 'django.core.cache.backends.redis.RedisCache',
             'LOCATION': REDIS_CACHE_URL,
+            'OPTIONS': {
+                'SOCKET_CONNECT_TIMEOUT': 5,
+                'SOCKET_TIMEOUT': 5,
+            },
+            'KEY_PREFIX': 'comparateur_prix',
             # Note: Using Django's built-in RedisCache backend. Do not pass django-redis 'client_class' here.
         }
     }
 else:
+    # Fallback vers cache local en mémoire si Redis n'est pas disponible
     CACHES = {
         'default': {
             'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
