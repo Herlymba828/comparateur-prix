@@ -331,13 +331,16 @@ else:
     try:
         import dj_database_url  # pyright: ignore[reportMissingImports]
         
-        # Utiliser DATABASE_URL si disponible (pour Railway, Heroku, etc.)
-        if os.getenv('DATABASE_URL'):
+        # Utiliser DATABASE_PUBLIC_URL (Railway public) ou DATABASE_URL (Railway internal) si disponible
+        # Priorité: DATABASE_PUBLIC_URL > DATABASE_URL
+        database_url = os.getenv('DATABASE_PUBLIC_URL') or os.getenv('DATABASE_URL')
+        
+        if database_url:
             # Détecter si on est sur Railway ou en local
             # Railway utilise des domaines .railway.internal ou .railway.app
-            database_url = os.getenv('DATABASE_URL', '').lower()
-            is_railway = '.railway.internal' in database_url or '.railway.app' in database_url or 'railway' in database_url
-            is_localhost = 'localhost' in database_url or '127.0.0.1' in database_url or '::1' in database_url
+            database_url_lower = database_url.lower()
+            is_railway = '.railway.internal' in database_url_lower or '.railway.app' in database_url_lower or 'railway' in database_url_lower or 'proxy.rlwy.net' in database_url_lower
+            is_localhost = 'localhost' in database_url_lower or '127.0.0.1' in database_url_lower or '::1' in database_url_lower
             
             # Détecter si on exécute depuis la machine locale (pas dans Railway)
             # Si RAILWAY_ENVIRONMENT n'est pas défini, on est probablement en local
@@ -353,7 +356,7 @@ else:
             
             DATABASES = {
                 'default': dj_database_url.config(
-                    default=os.getenv('DATABASE_URL'),
+                    default=database_url,
                     conn_max_age=600,
                     conn_health_checks=True,
                     ssl_require=ssl_required
@@ -458,8 +461,8 @@ if not ADMIN_URL.endswith('/'):
 
 # En production, exiger des identifiants sûrs et sécuriser la connexion DB
 if not DEBUG:
-    # Vérifier si on utilise DATABASE_URL ou des variables individuelles
-    using_database_url = bool(os.getenv('DATABASE_URL'))
+    # Vérifier si on utilise DATABASE_PUBLIC_URL/DATABASE_URL ou des variables individuelles
+    using_database_url = bool(os.getenv('DATABASE_PUBLIC_URL') or os.getenv('DATABASE_URL'))
     db_password = DATABASES['default'].get('PASSWORD', '') if not using_database_url else None
     
     if not using_database_url and not db_password:
