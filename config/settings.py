@@ -574,7 +574,16 @@ USE_TZ = True
 
 # Celery configuration (after TIME_ZONE is defined)
 # Use REDIS_URL as default broker/result backend
-CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', os.getenv('REDIS_URL', 'redis://localhost:6379/0'))
+# Priorité: REDIS_PUBLIC_URL (Railway public) > REDIS_URL (Railway internal) > REDISCLOUD_URL
+_redis_broker_url = (
+    os.getenv('CELERY_BROKER_URL') or 
+    os.getenv('REDIS_PUBLIC_URL') or 
+    os.getenv('REDIS_URL') or 
+    os.getenv('REDISCLOUD_URL') or 
+    'redis://localhost:6379/0'
+)
+CELERY_BROKER_URL = _redis_broker_url
+CELERY_RESULT_BACKEND = _redis_broker_url
 CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', CELERY_BROKER_URL)
 CELERY_TIMEZONE = TIME_ZONE
 # Retry broker connection on startup (Celery 6+ recommendation)
@@ -732,7 +741,8 @@ else:
 # Redis Configuration
 # Note: La configuration CACHES est définie plus bas (ligne ~815)
 # avec un fallback vers LocMemCache si Redis n'est pas disponible
-REDIS_URL = os.getenv('REDIS_URL') or os.getenv('REDISCLOUD_URL') or 'redis://localhost:6379'
+# Railway fournit REDIS_PUBLIC_URL (accès externe) et REDIS_URL (accès interne)
+# On utilise REDIS_PUBLIC_URL en priorité, puis REDIS_URL, puis REDISCLOUD_URL
 
 # Session Cache (utilise le cache configuré plus bas)
 # Si Redis n'est pas disponible, utilise LocMemCache automatiquement
@@ -802,7 +812,12 @@ GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY')
 
 # Cache (Redis si disponible en prod, sinon cache local mémoire en dev)
 # Vérifier si Redis est disponible avant de l'utiliser
-REDIS_URL = os.getenv('REDIS_URL') or os.getenv('REDISCLOUD_URL')
+# Priorité: REDIS_PUBLIC_URL (Railway public) > REDIS_URL (Railway internal) > REDISCLOUD_URL
+REDIS_URL = (
+    os.getenv('REDIS_PUBLIC_URL') or 
+    os.getenv('REDIS_URL') or 
+    os.getenv('REDISCLOUD_URL')
+)
 # Permet d'utiliser une base Redis distincte pour le cache Django si souhaité
 REDIS_CACHE_URL = os.getenv('REDIS_CACHE_URL', REDIS_URL)
 
@@ -811,15 +826,12 @@ USE_REDIS_CACHE = False
 if _redis_driver_available and REDIS_CACHE_URL:
     try:
         # Tester la connexion Redis avec un timeout très court
+        # Utiliser from_url() pour gérer automatiquement les URLs complètes avec mot de passe
         import redis as redis_client
-        from urllib.parse import urlparse
-        parsed = urlparse(REDIS_CACHE_URL)
-        test_client = redis_client.Redis(
-            host=parsed.hostname or 'localhost',
-            port=parsed.port or 6379,
-            password=parsed.password or os.getenv('REDIS_PASSWORD', ''),
-            socket_connect_timeout=1,  # Timeout très court pour ne pas bloquer
-            socket_timeout=1,
+        test_client = redis_client.from_url(
+            REDIS_CACHE_URL,
+            socket_connect_timeout=2,  # Timeout court pour ne pas bloquer le démarrage
+            socket_timeout=2,
             decode_responses=False
         )
         test_client.ping()
@@ -827,13 +839,17 @@ if _redis_driver_available and REDIS_CACHE_URL:
         USE_REDIS_CACHE = True
         import logging
         logger = logging.getLogger(__name__)
-        logger.info(f"Redis disponible à {REDIS_CACHE_URL}, utilisation du cache Redis")
+        # Masquer le mot de passe dans les logs
+        safe_url = REDIS_CACHE_URL.split('@')[-1] if '@' in REDIS_CACHE_URL else REDIS_CACHE_URL
+        logger.info(f"Redis disponible à redis://***@{safe_url}, utilisation du cache Redis")
     except Exception as e:
         # Redis n'est pas disponible, utiliser le cache local
         USE_REDIS_CACHE = False
         import logging
         logger = logging.getLogger(__name__)
-        logger.warning(f"Redis non disponible à {REDIS_CACHE_URL}: {e}. Utilisation du cache local (LocMemCache)")
+        # Masquer le mot de passe dans les logs
+        safe_url = REDIS_CACHE_URL.split('@')[-1] if '@' in REDIS_CACHE_URL else REDIS_CACHE_URL
+        logger.warning(f"Redis non disponible à redis://***@{safe_url}: {e}. Utilisation du cache local (LocMemCache)")
 
 if USE_REDIS_CACHE:
     CACHES = {
