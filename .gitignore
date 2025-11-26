@@ -27,3 +27,8 @@ htmlcov/
 
 # Data exports
 data/dgccrf_export.json
+data/exports/
+data/raw/
+celerybeat-schedule.*
+*.dat
+*.dir

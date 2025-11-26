@@ -13,8 +13,8 @@ param(
     [switch]$ImportDryRun,
     [switch]$OpenBrowser,
     [string]$ServerBind = "127.0.0.1",
-    [int]$ServerPort = 8000,
-    [switch]$AutoPort
+    [int]$ServerPort = 8000
+    # [switch]$AutoPort  # Désactivé - attribution automatique de ports désactivée
 )
 
 # Force UTF-8 in the current session (fix console mojibake and ensure Python UTF-8 IO)
@@ -220,21 +220,22 @@ function Start-Window {
 # 2) Django runserver
 if (-not $NoServer) {
     $finalPort = $ServerPort
-    if ($AutoPort) {
-        for ($p = $ServerPort; $p -lt ($ServerPort + 20); $p++) {
-            if (Test-PortFree -Port $p) { $finalPort = $p; break }
-        }
-        if ($finalPort -ne $ServerPort) {
-            Write-Info "Port libre trouvé: $finalPort (au lieu de $ServerPort)"
-        } else {
-            Write-Warn "Aucun port libre trouvé entre $ServerPort et $($ServerPort+19). Tentative sur $ServerPort."
-        }
-    }
-    # Verify port is actually free before starting (even if AutoPort didn't find one)
-    if (-not (Test-PortFree -Port $finalPort)) {
-        Write-Err "Le port $finalPort est déjà occupé. Arrêtez le processus qui l'utilise ou utilisez un autre port avec -ServerPort."
-        Write-Err "Pour trouver le processus: Get-NetTCPConnection -LocalPort $finalPort | Select-Object OwningProcess"
-    }
+    # Attribution automatique de ports désactivée
+    # if ($AutoPort) {
+    #     for ($p = $ServerPort; $p -lt ($ServerPort + 20); $p++) {
+    #         if (Test-PortFree -Port $p) { $finalPort = $p; break }
+    #     }
+    #     if ($finalPort -ne $ServerPort) {
+    #         Write-Info "Port libre trouvé: $finalPort (au lieu de $ServerPort)"
+    #     } else {
+    #         Write-Warn "Aucun port libre trouvé entre $ServerPort et $($ServerPort+19). Tentative sur $ServerPort."
+    #     }
+    # }
+    # Vérification de port libre désactivée
+    # if (-not (Test-PortFree -Port $finalPort)) {
+    #     Write-Err "Le port $finalPort est déjà occupé. Arrêtez le processus qui l'utilise ou utilisez un autre port avec -ServerPort."
+    #     Write-Err "Pour trouver le processus: Get-NetTCPConnection -LocalPort $finalPort | Select-Object OwningProcess"
+    # }
     # Ensure ML init is enabled only for server process (can be disabled during migrations below)
     # Escape $ so that the env var is set in the child session, not expanded in the parent
     $serverCmd = "`$env:RECO_INIT_MODELS_ON_STARTUP='1'; python manage.py runserver ${ServerBind}:$finalPort"

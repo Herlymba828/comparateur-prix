@@ -594,9 +594,15 @@ class ActivateView(APIView):
         user = check_activation_uid_token(uid, token, Utilisateur)
         if not user:
             return Response({"detail": "Token invalide ou expiré."}, status=400)
+        updates = []
         if not user.is_active:
             user.is_active = True
-            user.save(update_fields=["is_active"])
+            updates.append('is_active')
+        if not user.est_verifie:
+            user.est_verifie = True
+            updates.append('est_verifie')
+        if updates:
+            user.save(update_fields=updates)
         return Response({"detail": "Compte activé."})
 
     def post(self, request):
@@ -607,9 +613,15 @@ class ActivateView(APIView):
         user = check_activation_uid_token(uid, token, Utilisateur)
         if not user:
             return Response({"detail": "Token invalide ou expiré."}, status=400)
+        updates = []
         if not user.is_active:
             user.is_active = True
-            user.save(update_fields=["is_active"])
+            updates.append('is_active')
+        if not user.est_verifie:
+            user.est_verifie = True
+            updates.append('est_verifie')
+        if updates:
+            user.save(update_fields=updates)
         return Response({"detail": "Compte activé."})
 
 
@@ -617,9 +629,15 @@ def web_activate_uid_page(request, uid: str, token: str):
     user = check_activation_uid_token(uid, token, Utilisateur)
     if not user:
         return HttpResponseBadRequest('<h1>Activation échouée</h1><p>Token invalide ou expiré.</p>')
+    updates = []
     if not user.is_active:
         user.is_active = True
-        user.save(update_fields=['is_active'])
+        updates.append('is_active')
+    if not user.est_verifie:
+        user.est_verifie = True
+        updates.append('est_verifie')
+    if updates:
+        user.save(update_fields=updates)
     return HttpResponse("<h1>Activation réussie</h1><p>Votre compte est activé. Vous pouvez vous connecter.</p>")
 
 

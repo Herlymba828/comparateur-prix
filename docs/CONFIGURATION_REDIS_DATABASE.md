@@ -236,9 +236,9 @@ redis-cli ping
    - Railway fournit automatiquement `REDIS_URL`
    - Aucune configuration supplémentaire nécessaire !
 
-### Configuration pour cPanel
+### Configuration pour développement local
 
-Si Redis est installé sur votre serveur cPanel :
+Si Redis est installé localement :
 
 ```bash
 # Dans votre fichier .env
@@ -247,7 +247,7 @@ REDIS_CACHE_URL=redis://127.0.0.1:6379/1
 REDIS_PASSWORD=  # Laissez vide si pas de mot de passe
 ```
 
-**Note :** Vérifiez avec votre hébergeur si Redis est disponible et sur quel port.
+**Note :** Assurez-vous que Redis est démarré localement.
 
 ### Configuration avec mot de passe
 
@@ -320,16 +320,16 @@ CELERY_BROKER_URL=${REDIS_URL}
 CELERY_RESULT_BACKEND=${REDIS_URL}
 ```
 
-### Configuration pour cPanel (Production)
+### Configuration pour développement local (Production-like)
 
 ```bash
 # ============================================
 # BASE DE DONNÉES
 # ============================================
 DB_ENGINE=postgresql
-DB_NAME=nom_de_votre_base_cpanel
-DB_USER=nom_utilisateur_cpanel
-DB_PASSWORD=mot_de_passe_cpanel
+DB_NAME=comparateur_prix
+DB_USER=postgres
+DB_PASSWORD=votre_mot_de_passe
 DB_HOST=localhost
 DB_PORT=5432
 
@@ -483,7 +483,7 @@ CREATE DATABASE comparateur_prix CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_c
 - [ ] Connexion testée avec `redis-cli ping`
 - [ ] Celery configuré (si utilisé)
 
-### Production (Railway/cPanel)
+### Production (Railway)
 - [ ] `DATABASE_URL` configuré (Railway) ou variables individuelles (cPanel)
 - [ ] `REDIS_URL` configuré
 - [ ] `DJANGO_DEBUG=False`

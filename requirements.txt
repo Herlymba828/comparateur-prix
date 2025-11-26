@@ -35,7 +35,3 @@ social-auth-app-django==5.4.1
 # Graph analytics
 networkx==3.2.1
 python-louvain==0.16
-
-# ML models (optionnel - améliore les performances de prédiction)
-# xgboost==2.0.3  # Décommentez pour activer XGBoost
-# lightgbm==4.1.0  # Décommentez pour activer LightGBM

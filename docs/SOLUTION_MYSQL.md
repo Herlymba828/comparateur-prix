@@ -2,7 +2,7 @@
 
 ## Problème résolu
 
-Votre serveur utilise PostgreSQL 9.622, qui est trop ancien pour Django 5.1.2. La solution est d'utiliser **MySQL/MariaDB** qui est généralement mieux supporté sur cPanel.
+Si votre serveur utilise PostgreSQL 9.622, qui est trop ancien pour Django 5.1.2, la solution est d'utiliser **MySQL/MariaDB**.
 
 ## ✅ Modifications apportées
 
@@ -12,11 +12,9 @@ Votre serveur utilise PostgreSQL 9.622, qui est trop ancien pour Django 5.1.2. L
 
 ## 🚀 Étapes à suivre
 
-### Étape 1 : Créer la base de données MySQL dans cPanel
+### Étape 1 : Créer la base de données MySQL
 
-1. Connectez-vous à **cPanel**
-2. Allez dans **"MySQL Databases"**
-3. Créez une nouvelle base de données :
+1. Créez une nouvelle base de données MySQL :
    - Nom : `comparer` (ou autre)
    - Notez le nom complet : `rs2694021ez6eg8n_comparer`
 4. Créez un utilisateur :

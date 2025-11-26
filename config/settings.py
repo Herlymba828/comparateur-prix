@@ -36,8 +36,6 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 env_paths = [
     BASE_DIR / '.env',
     BASE_DIR.parent / '.env',
-    Path('/home/rs2694021ez6eg8n/comparer1/comparateur-prix/.env'),
-    Path('/home/rs2694021ez6eg8n/public_html/comparer/.env'),
 ]
 env_loaded = False
 for env_path in env_paths:
@@ -54,8 +52,9 @@ os.environ.setdefault('PGCLIENTENCODING', os.getenv('PGCLIENTENCODING', 'UTF8'))
 
 # SECURITY WARNING: don't run with debug turned on in production!
 _RAW_DEBUG = os.getenv('DJANGO_DEBUG', '')
-# Désactiver le mode debug en production
-DEBUG = os.getenv('DJANGO_DEBUG', 'False').lower() in ('1', 'true', 'yes', 'y')
+# Par défaut, DEBUG=True en développement local, False en production
+# En production, définir explicitement DJANGO_DEBUG=False
+DEBUG = os.getenv('DJANGO_DEBUG', 'True').lower() in ('1', 'true', 'yes', 'y')
 
 # Configuration de la sécurité en production
 if not DEBUG:

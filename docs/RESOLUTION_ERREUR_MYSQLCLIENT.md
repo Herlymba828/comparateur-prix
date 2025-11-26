@@ -29,7 +29,7 @@ PyMySQL==1.1.0
 
 **Avantages** :
 - ✅ Fonctionne sur Railway (PostgreSQL)
-- ✅ Fonctionne sur cPanel (PyMySQL pour MySQL)
+- ✅ Fonctionne avec PyMySQL pour MySQL
 - ✅ Pas de dépendances système nécessaires
 
 ### Option 2 : Utiliser PyMySQL uniquement
@@ -61,7 +61,7 @@ Railway fournit automatiquement `DATABASE_URL` pour PostgreSQL, donc :
 
 Votre `config/settings.py` utilise maintenant :
 1. **DATABASE_URL** en priorité (Railway) → PostgreSQL
-2. Variables individuelles en fallback (cPanel) → MySQL ou PostgreSQL selon configuration
+2. Variables individuelles en fallback (développement local) → MySQL ou PostgreSQL selon configuration
 
 ---
 
@@ -78,9 +78,9 @@ Votre `config/settings.py` utilise maintenant :
    railway run python manage.py dbshell
    ```
 
-### Sur cPanel (si vous utilisez MySQL)
+### Si vous utilisez MySQL
 
-Si vous utilisez MySQL sur cPanel, `PyMySQL` fonctionnera correctement sans `mysqlclient`.
+Si vous utilisez MySQL, `PyMySQL` fonctionnera correctement sans `mysqlclient`.
 
 ---
 
@@ -92,7 +92,7 @@ Si vous utilisez MySQL sur cPanel, `PyMySQL` fonctionnera correctement sans `mys
 
 **Résultat** :
 - ✅ Railway : Utilise PostgreSQL via DATABASE_URL (pas besoin de mysqlclient)
-- ✅ cPanel : Utilise PyMySQL pour MySQL (pas besoin de mysqlclient)
+- ✅ Utilise PyMySQL pour MySQL (pas besoin de mysqlclient)
 - ✅ Pas d'erreur de build sur Railway
 
 ---

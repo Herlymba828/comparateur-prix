@@ -160,7 +160,7 @@ if ($testsFailed -eq 0) {
     Write-Host "💡 Conseils de dépannage:" -ForegroundColor Cyan
     Write-Host "   1. Vérifiez que le serveur est en ligne" -ForegroundColor Gray
     Write-Host "   2. Vérifiez les logs d'erreur sur le serveur" -ForegroundColor Gray
-    Write-Host "   3. Vérifiez la configuration dans cPanel" -ForegroundColor Gray
+    Write-Host "   3. Vérifiez la configuration dans Railway" -ForegroundColor Gray
     Write-Host "   4. Vérifiez le fichier .env sur le serveur" -ForegroundColor Gray
 }
 

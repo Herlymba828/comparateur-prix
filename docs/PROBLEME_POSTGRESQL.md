@@ -14,11 +14,11 @@ Votre serveur utilise **PostgreSQL 9.622**, mais **Django 5.1.2** nécessite **P
 
 ### ✅ Solution 1 : Utiliser MySQL/MariaDB (RECOMMANDÉ)
 
-MySQL/MariaDB est généralement plus facile à configurer sur cPanel et est largement supporté par Django.
+MySQL/MariaDB est largement supporté par Django.
 
-#### Étape 1 : Créer la base de données MySQL dans cPanel
+#### Étape 1 : Créer la base de données MySQL
 
-1. Allez dans cPanel → **"MySQL Databases"**
+1. Créez une nouvelle base de données MySQL
 2. Créez une nouvelle base de données (ex: `rs2694021ez6eg8n_comparer`)
 3. Créez un utilisateur avec un mot de passe fort
 4. Donnez tous les privilèges à l'utilisateur sur la base
@@ -141,7 +141,7 @@ La solution la plus rapide est d'utiliser MySQL/MariaDB. Suivez les étapes ci-d
 
 ## 📝 Checklist après migration vers MySQL
 
-- [ ] Base de données MySQL créée dans cPanel
+- [ ] Base de données MySQL créée
 - [ ] Utilisateur créé avec tous les privilèges
 - [ ] Fichier `.env` mis à jour avec les identifiants MySQL
 - [ ] `mysqlclient` ou `PyMySQL` installé

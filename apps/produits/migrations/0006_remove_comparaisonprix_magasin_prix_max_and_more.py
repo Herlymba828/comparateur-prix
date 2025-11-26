@@ -10,6 +10,11 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        # Supprimer l'index de ComparaisonPrix avant de supprimer les champs
+        migrations.RemoveIndex(
+            model_name='comparaisonprix',
+            name='produits_co_produit_b68b36_idx',
+        ),
         migrations.RemoveField(
             model_name='comparaisonprix',
             name='magasin_prix_max',
@@ -21,6 +26,15 @@ class Migration(migrations.Migration):
         migrations.RemoveField(
             model_name='comparaisonprix',
             name='produit',
+        ),
+        # Supprimer les index de HistoriquePrix avant de supprimer les champs
+        migrations.RemoveIndex(
+            model_name='historiqueprix',
+            name='produits_hi_prix_id_34f78d_idx',
+        ),
+        migrations.RemoveIndex(
+            model_name='historiqueprix',
+            name='produits_hi_date_ch_29e8ed_idx',
         ),
         migrations.RemoveField(
             model_name='historiqueprix',
@@ -34,10 +48,25 @@ class Migration(migrations.Migration):
             name='homologationproduit',
             unique_together=None,
         ),
+        # Supprimer d'abord les index qui référencent les champs avant de les supprimer
+        # Ces index ont été créés dans la migration 0004
+        migrations.RemoveIndex(
+            model_name='prix',
+            name='produits_pr_produit_3232e5_idx',
+        ),
+        migrations.RemoveIndex(
+            model_name='prix',
+            name='produits_pr_prix_ac_cd783f_idx',
+        ),
+        migrations.RemoveIndex(
+            model_name='prix',
+            name='produits_pr_est_pro_e0354f_idx',
+        ),
         migrations.AlterUniqueTogether(
             name='prix',
             unique_together=None,
         ),
+        # Maintenant on peut supprimer les champs
         migrations.RemoveField(
             model_name='prix',
             name='magasin',
@@ -54,9 +83,31 @@ class Migration(migrations.Migration):
             name='prixhomologue',
             unique_together=None,
         ),
+        # Supprimer l'index de PrixHomologue avant de supprimer le champ produit
+        migrations.RemoveIndex(
+            model_name='prixhomologue',
+            name='produits_pr_produit_5a1e34_idx',
+        ),
+        migrations.RemoveIndex(
+            model_name='prixhomologue',
+            name='produits_pr_localis_24a6d8_idx',
+        ),
         migrations.RemoveField(
             model_name='prixhomologue',
             name='produit',
+        ),
+        # Supprimer l'index de SuggestionPrix avant de supprimer les champs
+        migrations.RemoveIndex(
+            model_name='suggestionprix',
+            name='produits_su_produit_311df8_idx',
+        ),
+        migrations.RemoveIndex(
+            model_name='suggestionprix',
+            name='produits_su_statut_e54c14_idx',
+        ),
+        migrations.RemoveIndex(
+            model_name='suggestionprix',
+            name='produits_su_utilisa_5ace3e_idx',
         ),
         migrations.RemoveField(
             model_name='suggestionprix',
@@ -73,6 +124,19 @@ class Migration(migrations.Migration):
         migrations.RemoveField(
             model_name='suggestionprix',
             name='verifie_par',
+        ),
+        # Supprimer les index et unique_together de AlertePrix avant de supprimer le modèle
+        migrations.AlterUniqueTogether(
+            name='alerteprix',
+            unique_together=None,
+        ),
+        migrations.RemoveIndex(
+            model_name='alerteprix',
+            name='produits_al_utilisa_0d0584_idx',
+        ),
+        migrations.RemoveIndex(
+            model_name='alerteprix',
+            name='produits_al_produit_aad8e6_idx',
         ),
         migrations.DeleteModel(
             name='AlertePrix',

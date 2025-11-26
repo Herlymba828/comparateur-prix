@@ -1,6 +1,17 @@
 # Generated manually to fix missing produit_id column
-from django.db import migrations, models
-import django.db.models.deletion
+# Note: Cette migration est redondante car la migration 0012 a déjà ajouté le champ produit.
+# Elle est conservée pour compatibilité mais ne fait rien car le champ existe déjà.
+from django.db import migrations
+
+
+def noop_forward(apps, schema_editor):
+    """Fonction no-op : le champ produit a déjà été ajouté dans la migration 0012"""
+    pass
+
+
+def noop_reverse(apps, schema_editor):
+    """Fonction no-op pour la migration inverse"""
+    pass
 
 
 class Migration(migrations.Migration):
@@ -10,31 +21,8 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        # Vérifier et ajouter la colonne si elle n'existe pas
-        migrations.RunSQL(
-            sql="""
-                DO $$ 
-                BEGIN
-                    IF NOT EXISTS (
-                        SELECT 1 FROM information_schema.columns 
-                        WHERE table_name='produits_homologationproduit' 
-                        AND column_name='produit_id'
-                    ) THEN
-                        ALTER TABLE produits_homologationproduit 
-                        ADD COLUMN produit_id BIGINT NULL;
-                        ALTER TABLE produits_homologationproduit 
-                        ADD CONSTRAINT produits_homologationproduit_produit_id_fk 
-                        FOREIGN KEY (produit_id) REFERENCES produits_produit(id) 
-                        ON DELETE SET NULL;
-                        CREATE UNIQUE INDEX IF NOT EXISTS produits_homologationproduit_produit_id_key 
-                        ON produits_homologationproduit(produit_id) WHERE produit_id IS NOT NULL;
-                    END IF;
-                END $$;
-            """,
-            reverse_sql="""
-                ALTER TABLE produits_homologationproduit 
-                DROP COLUMN IF EXISTS produit_id;
-            """
-        ),
+        # Migration no-op : le champ produit a déjà été ajouté dans la migration 0012
+        # Cette migration est conservée pour compatibilité mais ne fait rien
+        migrations.RunPython(noop_forward, noop_reverse),
     ]
 

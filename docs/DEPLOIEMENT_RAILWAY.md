@@ -292,7 +292,7 @@ whitenoise==6.6.0
 
 **Configuration automatique** :
 - ✅ `DATABASE_URL` est utilisé en priorité (Railway)
-- ✅ Fallback sur variables individuelles (cPanel/local)
+- ✅ Fallback sur variables individuelles (développement local)
 - ✅ Support PostgreSQL et MySQL
 - ✅ Configuration SSL automatique
 

@@ -15,28 +15,17 @@ D'après votre configuration, vous avez ces domaines :
 
 Utilisez `comparateurdeprix.com` ou `www.comparateurdeprix.com` directement pour votre backend.
 
-#### Étape 1 : Configurer le domaine dans cPanel
+#### Étape 1 : Configurer le domaine sur Railway
 
-1. Dans cPanel, allez dans **"Subdomains"** ou **"Addon Domains"**
-2. Vérifiez que `comparateurdeprix.com` pointe vers :
-   - `/home/rs2694021ez6eg8n/public_html/comparer`
-   - OU `/home/rs2694021ez6eg8n/public_html/` (selon votre configuration)
+1. Dans Railway, allez dans votre projet
+2. Ajoutez un domaine personnalisé : `comparateurdeprix.com`
+3. Railway configure automatiquement le certificat SSL via Let's Encrypt
 
-#### Étape 2 : Vérifier le certificat SSL
+#### Étape 3 : Configurer le domaine sur Railway
 
-1. Dans cPanel → **SSL/TLS** → **Manage SSL Sites**
-2. Vérifiez que `comparateurdeprix.com` et `www.comparateurdeprix.com` ont des certificats SSL valides
-3. Si pas de certificat, installez-en un via **Let's Encrypt SSL**
-
-#### Étape 3 : Configurer Passenger pour comparateurdeprix.com
-
-1. Dans cPanel → **Setup Python App** ou **Passenger**
-2. Créez/modifiez l'application :
-   - **App Root** : `/home/rs2694021ez6eg8n/public_html/comparer`
-   - **App URL** : `/` (ou `/api` si vous préférez)
-   - **Python Version** : `3.11`
-   - **Application File** : `passenger_wsgi.py`
-   - **Domain** : `comparateurdeprix.com` (si l'option est disponible)
+1. Dans Railway, allez dans votre projet
+2. Ajoutez un domaine personnalisé : `comparateurdeprix.com`
+3. Railway configure automatiquement le certificat SSL
 
 #### Étape 4 : Mettre à jour le fichier .env
 
@@ -62,9 +51,7 @@ SITE_URL=https://comparateurdeprix.com
 
 #### Étape 5 : Redémarrer l'application
 
-1. Dans cPanel → **Setup Python App**
-2. Cliquez sur votre application
-3. Cliquez sur **"Restart"**
+Railway redémarre automatiquement après chaque déploiement.
 
 #### Étape 6 : Tester
 
@@ -79,33 +66,13 @@ Testez ces URLs :
 
 Créez un sous-domaine dédié pour l'API : `api.comparateurdeprix.com`
 
-#### Étape 1 : Créer le sous-domaine dans cPanel
+#### Étape 1 : Créer le sous-domaine sur Railway
 
-1. Dans cPanel → **Subdomains**
-2. Créez un nouveau sous-domaine :
-   - **Subdomain** : `api`
-   - **Domain** : `comparateurdeprix.com`
-   - **Document Root** : `/home/rs2694021ez6eg8n/public_html/comparer`
-   - Cliquez sur **"Create"**
+1. Dans Railway, allez dans votre projet
+2. Ajoutez un domaine personnalisé : `api.comparateurdeprix.com`
+3. Railway configure automatiquement le certificat SSL via Let's Encrypt
 
-#### Étape 2 : Installer un certificat SSL pour le sous-domaine
-
-1. Dans cPanel → **SSL/TLS** → **Let's Encrypt SSL**
-2. Sélectionnez `api.comparateurdeprix.com`
-3. Cliquez sur **"Issue"** ou **"Install"**
-4. Attendez 2-5 minutes
-
-#### Étape 3 : Configurer Passenger pour le sous-domaine
-
-1. Dans cPanel → **Setup Python App** ou **Passenger**
-2. Créez une nouvelle application :
-   - **App Root** : `/home/rs2694021ez6eg8n/public_html/comparer`
-   - **App URL** : `/` (ou laissez vide)
-   - **Python Version** : `3.11`
-   - **Application File** : `passenger_wsgi.py`
-   - **Domain** : `api.comparateurdeprix.com` (si disponible)
-
-#### Étape 4 : Mettre à jour le fichier .env
+#### Étape 2 : Mettre à jour le fichier .env
 
 ```bash
 # Django
@@ -127,9 +94,7 @@ SITE_URL=https://comparateurdeprix.com
 
 #### Étape 5 : Redémarrer l'application
 
-1. Dans cPanel → **Setup Python App**
-2. Cliquez sur votre application
-3. Cliquez sur **"Restart"**
+Railway redémarre automatiquement après chaque déploiement.
 
 #### Étape 6 : Tester
 
@@ -181,7 +146,7 @@ Testez les nouvelles URLs pour vérifier que tout fonctionne.
 - [ ] `comparateurdeprix.com` pointe vers le bon répertoire
 - [ ] Certificat SSL installé pour `comparateurdeprix.com`
 - [ ] Certificat SSL installé pour `www.comparateurdeprix.com`
-- [ ] Passenger configuré pour `comparateurdeprix.com`
+- [ ] Domaine configuré sur Railway pour `comparateurdeprix.com`
 - [ ] Fichier `.env` mis à jour avec les nouveaux domaines
 - [ ] Application redémarrée
 - [ ] Test réussi : `https://comparateurdeprix.com/api/health/`
@@ -189,7 +154,7 @@ Testez les nouvelles URLs pour vérifier que tout fonctionne.
 ### Pour Option 2 (Sous-domaine API)
 - [ ] Sous-domaine `api.comparateurdeprix.com` créé
 - [ ] Certificat SSL installé pour `api.comparateurdeprix.com`
-- [ ] Passenger configuré pour `api.comparateurdeprix.com`
+- [ ] Domaine configuré sur Railway pour `api.comparateurdeprix.com`
 - [ ] Fichier `.env` mis à jour avec le sous-domaine
 - [ ] Application redémarrée
 - [ ] Test réussi : `https://api.comparateurdeprix.com/api/health/`
@@ -201,22 +166,16 @@ Testez les nouvelles URLs pour vérifier que tout fonctionne.
 ### Le certificat SSL n'est pas valide
 
 **Solution** :
-1. Dans cPanel → **SSL/TLS** → **Let's Encrypt SSL**
-2. Supprimez l'ancien certificat
-3. Réinstallez un nouveau certificat
-
-### Le domaine ne pointe pas vers le bon répertoire
-
-**Solution** :
-1. Dans cPanel → **Subdomains** ou **Addon Domains**
-2. Modifiez le **Document Root** pour pointer vers `/home/rs2694021ez6eg8n/public_html/comparer`
+1. Dans Railway, vérifiez la configuration du domaine
+2. Railway gère automatiquement les certificats SSL via Let's Encrypt
+3. Si nécessaire, supprimez et réajoutez le domaine
 
 ### Erreur 404 sur les nouvelles URLs
 
 **Solution** :
-1. Vérifiez que Passenger est configuré pour le bon domaine
-2. Vérifiez que `passenger_wsgi.py` est dans le bon répertoire
-3. Redémarrez l'application dans cPanel
+1. Vérifiez que le domaine est bien configuré dans Railway
+2. Vérifiez que le service est déployé et actif
+3. Attendez quelques minutes pour la propagation DNS
 
 ### Erreur ALLOWED_HOSTS
 
@@ -240,7 +199,7 @@ Mais si vous préférez la simplicité, l'Option 1 fonctionne aussi très bien !
 ## 📞 Support
 
 Si vous rencontrez des problèmes :
-1. Vérifiez les logs : `tail -f error_log`
-2. Vérifiez la configuration dans cPanel
-3. Contactez le support de votre hébergeur si nécessaire
+1. Vérifiez les logs dans Railway : `railway logs`
+2. Vérifiez la configuration du domaine dans Railway
+3. Consultez la documentation Railway si nécessaire
 

@@ -231,12 +231,12 @@ python manage.py migrate
 # 4. Vérifier la configuration
 python manage.py check --deploy
 
-# 5. Redémarrer l'application (via cPanel ou Passenger)
+# 5. Redémarrer l'application (Railway redémarre automatiquement après déploiement)
 ```
 
 ## ⚠️ Notes importantes
 
-1. **POSTGRES_SSL_REQUIRE=False** : Sur cPanel, PostgreSQL fonctionne généralement sans SSL. Si vous obtenez une erreur de connexion SSL, mettez cette valeur à `False`.
+1. **POSTGRES_SSL_REQUIRE** : Sur Railway, SSL est généralement requis. En développement local, vous pouvez le mettre à `False` si nécessaire.
 
 2. **DJANGO_DEBUG=False** : **OBLIGATOIRE** en production pour la sécurité. Les paramètres de sécurité (HSTS, SSL redirect, etc.) s'activeront automatiquement.
 
