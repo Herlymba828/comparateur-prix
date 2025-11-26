@@ -16,6 +16,13 @@ except Exception:  # ModuleNotFoundError or others
     RefreshToken = None
     HAS_JWT = False
 
+try:
+    from requests.exceptions import ConnectionError as RequestsConnectionError
+except ImportError:
+    # Si requests n'est pas disponible, définir une classe factice
+    class RequestsConnectionError(Exception):
+        pass
+
 from django.utils.translation import gettext_lazy as _
 from django.db import transaction
 from django.utils import timezone
@@ -101,6 +108,9 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         """Créer un nouvel utilisateur avec gestion d'erreurs robuste"""
         import logging
         import sys
+        from django.db import connection, DatabaseError, OperationalError
+        from requests.exceptions import ConnectionError as RequestsConnectionError
+        
         logger = logging.getLogger(__name__)
         
         # Log de début pour confirmer que la requête arrive
@@ -108,42 +118,81 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         print(f"[INFO] Données reçues: {request.data}", file=sys.stdout, flush=True)
         
         try:
+            # Vérifier la connexion à la base de données avant de commencer
+            try:
+                connection.ensure_connection()
+            except (DatabaseError, OperationalError) as db_err:
+                logger.error(f"Erreur de connexion à la base de données: {db_err}", exc_info=True)
+                print(f"[ERROR] Connexion DB échouée: {db_err}", file=sys.stderr, flush=True)
+                return Response(
+                    {
+                        'detail': 'Impossible de se connecter à la base de données. Veuillez réessayer plus tard.',
+                        'error_type': 'DatabaseConnectionError',
+                        'debug_info': 'Consultez les logs du serveur pour plus de détails.'
+                    },
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE
+                )
+            
             serializer = self.get_serializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             
             # Créer l'utilisateur dans une transaction
-            with transaction.atomic():
-                user = serializer.save()
-                
-                # Attendre que les signaux créent le profil et l'abonnement
-                # Les signaux s'exécutent dans la même transaction
-                
-                # Vérifier que le profil a été créé (par signal)
-                try:
-                    # Utiliser select_related pour éviter les requêtes supplémentaires
-                    user = Utilisateur.objects.select_related('profil').get(pk=user.pk)
-                    profil = user.profil
-                except (ProfilUtilisateur.DoesNotExist, AttributeError):
-                    # Si le profil n'existe pas, le créer manuellement
-                    logger.warning(f"Profil non créé par signal pour {user.username}, création manuelle")
+            try:
+                with transaction.atomic():
+                    user = serializer.save()
+                    
+                    # Attendre que les signaux créent le profil et l'abonnement
+                    # Les signaux s'exécutent dans la même transaction
+                    
+                    # Vérifier que le profil a été créé (par signal)
                     try:
-                        ProfilUtilisateur.objects.create(utilisateur=user)
+                        # Utiliser select_related pour éviter les requêtes supplémentaires
                         user = Utilisateur.objects.select_related('profil').get(pk=user.pk)
+                        profil = user.profil
+                    except (ProfilUtilisateur.DoesNotExist, AttributeError):
+                        # Si le profil n'existe pas, le créer manuellement
+                        logger.warning(f"Profil non créé par signal pour {user.username}, création manuelle")
+                        try:
+                            ProfilUtilisateur.objects.create(utilisateur=user)
+                            user = Utilisateur.objects.select_related('profil').get(pk=user.pk)
+                        except (DatabaseError, OperationalError) as db_err:
+                            logger.error(f"Erreur DB lors de la création manuelle du profil: {db_err}")
+                            # Continuer même si le profil n'a pas pu être créé
+                        except Exception as e:
+                            logger.error(f"Erreur lors de la création manuelle du profil: {e}")
+                            # Continuer même si le profil n'a pas pu être créé
+                    except (DatabaseError, OperationalError) as db_err:
+                        # Gérer les erreurs de connexion DB
+                        logger.error(f"Erreur DB lors de la récupération du profil: {db_err}", exc_info=True)
+                        # Continuer avec l'utilisateur sans profil
                     except Exception as e:
-                        logger.error(f"Erreur lors de la création manuelle du profil: {e}")
-                        # Continuer même si le profil n'a pas pu être créé
-                except Exception as e:
-                    # Gérer les erreurs de connexion DB
-                    logger.error(f"Erreur lors de la récupération du profil: {e}", exc_info=True)
-                    # Continuer avec l'utilisateur sans profil
+                        # Gérer les autres erreurs
+                        logger.error(f"Erreur lors de la récupération du profil: {e}", exc_info=True)
+                        # Continuer avec l'utilisateur sans profil
+            except (DatabaseError, OperationalError) as db_err:
+                # Erreur de base de données lors de la création
+                logger.error(f"Erreur DB lors de la création de l'utilisateur: {db_err}", exc_info=True)
+                print(f"[ERROR] Erreur DB création utilisateur: {db_err}", file=sys.stderr, flush=True)
+                return Response(
+                    {
+                        'detail': 'Erreur lors de la création du compte. Veuillez réessayer plus tard.',
+                        'error_type': 'DatabaseError',
+                        'debug_info': 'Consultez les logs du serveur pour plus de détails.'
+                    },
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE
+                )
             
             # Sérialiser la réponse avec UtilisateurSerializer pour avoir toutes les infos
             # Utiliser select_related pour éviter les requêtes supplémentaires
             try:
                 user = Utilisateur.objects.select_related('profil').get(pk=user.pk)
+            except (DatabaseError, OperationalError) as db_err:
+                logger.error(f"Erreur DB lors de la récupération de l'utilisateur pour sérialisation: {db_err}", exc_info=True)
+                # Utiliser l'utilisateur tel quel si la requête échoue
             except Exception as e:
                 logger.error(f"Erreur lors de la récupération de l'utilisateur pour sérialisation: {e}", exc_info=True)
                 # Utiliser l'utilisateur tel quel si la requête échoue
+            
             response_serializer = UtilisateurSerializer(user)
             
             # Préparer la réponse
@@ -164,6 +213,22 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
             if not getattr(user, 'est_verifie', False):
                 response_data['activation_pending'] = True
             
+            # Essayer d'envoyer l'email d'activation (ne pas faire échouer l'inscription si ça échoue)
+            try:
+                from .utils import make_activation_uid_token, build_activation_link_uid
+                uidb64, token = make_activation_uid_token(user)
+                activation_url = build_activation_link_uid(uidb64, token)
+                if user.email:
+                    try:
+                        send_activation_email_uid.delay(user.email, activation_url)
+                    except (RequestsConnectionError, Exception) as email_err:
+                        # Si Celery/Redis n'est pas disponible, logger mais ne pas faire échouer
+                        logger.warning(f"Impossible d'envoyer l'email d'activation (Celery/Redis peut être indisponible): {email_err}")
+                        print(f"[WARNING] Email d'activation non envoyé: {email_err}", file=sys.stdout, flush=True)
+            except Exception as email_err:
+                # Ne pas faire échouer l'inscription si l'email ne peut pas être envoyé
+                logger.warning(f"Erreur lors de la préparation de l'email d'activation: {email_err}")
+            
             return Response(response_data, status=status.HTTP_201_CREATED)
             
         except serializers.ValidationError as e:
@@ -173,10 +238,53 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
                 e.detail if hasattr(e, 'detail') else {'detail': 'Erreur de validation', 'errors': str(e)},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        except (DatabaseError, OperationalError) as db_err:
+            # Erreur de base de données
+            import traceback
+            error_traceback = traceback.format_exc()
+            error_message = (
+                f"❌ ERREUR DB - Création utilisateur échouée\n"
+                f"Type: {type(db_err).__name__}\n"
+                f"Message: {str(db_err)}\n"
+                f"Traceback:\n{error_traceback}\n"
+                f"Données reçues: {request.data}"
+            )
+            logger.error(error_message)
+            print(error_message, file=sys.stderr, flush=True)
+            
+            return Response(
+                {
+                    'detail': 'Erreur de connexion à la base de données. Veuillez réessayer plus tard.',
+                    'error_type': 'DatabaseError',
+                    'debug_info': 'Consultez les logs du serveur pour plus de détails.'
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE
+            )
+        except RequestsConnectionError as conn_err:
+            # Erreur de connexion réseau (Redis, Celery, etc.)
+            import traceback
+            error_traceback = traceback.format_exc()
+            error_message = (
+                f"❌ ERREUR CONNEXION - Création utilisateur échouée\n"
+                f"Type: ConnectionError\n"
+                f"Message: {str(conn_err)}\n"
+                f"Traceback:\n{error_traceback}\n"
+                f"Données reçues: {request.data}"
+            )
+            logger.error(error_message)
+            print(error_message, file=sys.stderr, flush=True)
+            
+            return Response(
+                {
+                    'detail': 'Erreur de connexion au serveur. Veuillez réessayer plus tard.',
+                    'error_type': 'ConnectionError',
+                    'debug_info': 'Consultez les logs du serveur pour plus de détails.'
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE
+            )
         except Exception as e:
             # Erreur inattendue - logger avec tous les détails
             import traceback
-            import sys
             error_traceback = traceback.format_exc()
             error_message = (
                 f"❌ ERREUR 500 - Création utilisateur échouée\n"
