@@ -578,16 +578,23 @@ USE_TZ = True
 # Celery configuration (after TIME_ZONE is defined)
 # Use REDIS_URL as default broker/result backend
 # Priorité: REDIS_PUBLIC_URL (Railway public) > REDIS_URL (Railway internal) > REDISCLOUD_URL
+# Ne pas utiliser de fallback localhost en production (cela causerait des erreurs de connexion)
 _redis_broker_url = (
     os.getenv('CELERY_BROKER_URL') or 
     os.getenv('REDIS_PUBLIC_URL') or 
     os.getenv('REDIS_URL') or 
-    os.getenv('REDISCLOUD_URL') or 
-    'redis://localhost:6379/0'
+    os.getenv('REDISCLOUD_URL')
 )
+# Si aucune URL Redis n'est disponible, utiliser un fallback localhost uniquement en développement local
+if not _redis_broker_url and DEBUG:
+    _redis_broker_url = 'redis://localhost:6379/0'
+elif not _redis_broker_url:
+    # En production, ne pas définir de fallback - Celery utilisera la configuration par défaut
+    # qui peut être configurée ailleurs ou désactivée
+    _redis_broker_url = None
+
 CELERY_BROKER_URL = _redis_broker_url
-CELERY_RESULT_BACKEND = _redis_broker_url
-CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', CELERY_BROKER_URL)
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', _redis_broker_url)
 CELERY_TIMEZONE = TIME_ZONE
 # Retry broker connection on startup (Celery 6+ recommendation)
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = os.getenv('CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP', 'True').lower() in ('1', 'true', 'yes', 'y')
@@ -822,37 +829,73 @@ REDIS_URL = (
     os.getenv('REDISCLOUD_URL')
 )
 # Permet d'utiliser une base Redis distincte pour le cache Django si souhaité
-REDIS_CACHE_URL = os.getenv('REDIS_CACHE_URL', REDIS_URL)
+REDIS_CACHE_URL = os.getenv('REDIS_CACHE_URL') or REDIS_URL
 
 # Tester la connexion Redis si disponible (avec timeout court pour ne pas bloquer le démarrage)
 USE_REDIS_CACHE = False
+import logging
+logger = logging.getLogger(__name__)
+
+# Log des variables d'environnement Redis pour le débogage (sans exposer les mots de passe)
+_redis_public_url_set = bool(os.getenv('REDIS_PUBLIC_URL'))
+_redis_url_set = bool(os.getenv('REDIS_URL'))
+_rediscloud_url_set = bool(os.getenv('REDISCLOUD_URL'))
+_redis_cache_url_set = bool(os.getenv('REDIS_CACHE_URL'))
+logger.info(f"Variables Redis détectées - REDIS_PUBLIC_URL: {_redis_public_url_set}, REDIS_URL: {_redis_url_set}, REDISCLOUD_URL: {_rediscloud_url_set}, REDIS_CACHE_URL: {_redis_cache_url_set}")
+if REDIS_CACHE_URL:
+    # Afficher l'URL Redis masquée pour le débogage
+    if '@' in REDIS_CACHE_URL:
+        _debug_url = 'redis://***@' + REDIS_CACHE_URL.split('@')[-1]
+    else:
+        _debug_url = REDIS_CACHE_URL.replace('redis://', 'redis://***@').replace('rediss://', 'rediss://***@')
+    logger.info(f"REDIS_CACHE_URL configurée: {_debug_url}")
+else:
+    logger.info("REDIS_CACHE_URL est None ou vide - utilisation du cache local")
+
 if _redis_driver_available and REDIS_CACHE_URL:
-    try:
-        # Tester la connexion Redis avec un timeout très court
-        # Utiliser from_url() pour gérer automatiquement les URLs complètes avec mot de passe
-        import redis as redis_client
-        test_client = redis_client.from_url(
-            REDIS_CACHE_URL,
-            socket_connect_timeout=2,  # Timeout court pour ne pas bloquer le démarrage
-            socket_timeout=2,
-            decode_responses=False
-        )
-        test_client.ping()
-        test_client.close()
-        USE_REDIS_CACHE = True
-        import logging
-        logger = logging.getLogger(__name__)
-        # Masquer le mot de passe dans les logs
-        safe_url = REDIS_CACHE_URL.split('@')[-1] if '@' in REDIS_CACHE_URL else REDIS_CACHE_URL
-        logger.info(f"Redis disponible à redis://***@{safe_url}, utilisation du cache Redis")
-    except Exception as e:
-        # Redis n'est pas disponible, utiliser le cache local
+    # Nettoyer l'URL Redis (supprimer les espaces, s'assurer qu'elle commence par redis://)
+    REDIS_CACHE_URL = REDIS_CACHE_URL.strip()
+    if not REDIS_CACHE_URL.startswith(('redis://', 'rediss://')):
+        logger.warning(f"URL Redis invalide (ne commence pas par redis:// ou rediss://): {REDIS_CACHE_URL[:50]}... Utilisation du cache local.")
         USE_REDIS_CACHE = False
-        import logging
-        logger = logging.getLogger(__name__)
-        # Masquer le mot de passe dans les logs
-        safe_url = REDIS_CACHE_URL.split('@')[-1] if '@' in REDIS_CACHE_URL else REDIS_CACHE_URL
-        logger.warning(f"Redis non disponible à redis://***@{safe_url}: {e}. Utilisation du cache local (LocMemCache)")
+    else:
+        try:
+            # Tester la connexion Redis avec un timeout très court
+            # Utiliser from_url() pour gérer automatiquement les URLs complètes avec mot de passe
+            import redis as redis_client
+            test_client = redis_client.from_url(
+                REDIS_CACHE_URL,
+                socket_connect_timeout=2,  # Timeout court pour ne pas bloquer le démarrage
+                socket_timeout=2,
+                decode_responses=False
+            )
+            test_client.ping()
+            test_client.close()
+            USE_REDIS_CACHE = True
+            # Masquer le mot de passe dans les logs
+            if '@' in REDIS_CACHE_URL:
+                # Extraire la partie après @ (host:port/db)
+                safe_url = REDIS_CACHE_URL.split('@')[-1]
+            else:
+                # Si pas de @, c'est probablement une URL sans authentification
+                safe_url = REDIS_CACHE_URL.replace('redis://', '').replace('rediss://', '')
+            logger.info(f"Redis disponible à redis://***@{safe_url}, utilisation du cache Redis")
+        except Exception as e:
+            # Redis n'est pas disponible, utiliser le cache local
+            USE_REDIS_CACHE = False
+            # Masquer le mot de passe dans les logs
+            if '@' in REDIS_CACHE_URL:
+                # Extraire la partie après @ (host:port/db)
+                safe_url = REDIS_CACHE_URL.split('@')[-1]
+            else:
+                # Si pas de @, c'est probablement une URL sans authentification
+                safe_url = REDIS_CACHE_URL.replace('redis://', '').replace('rediss://', '')
+            logger.warning(f"Redis non disponible à redis://***@{safe_url}: {e}. Utilisation du cache local (LocMemCache)")
+else:
+    if not _redis_driver_available:
+        logger.info("Driver Redis non disponible, utilisation du cache local (LocMemCache)")
+    elif not REDIS_CACHE_URL:
+        logger.info("Aucune URL Redis configurée, utilisation du cache local (LocMemCache)")
 
 if USE_REDIS_CACHE:
     CACHES = {
