@@ -58,14 +58,24 @@ DEBUG = os.getenv('DJANGO_DEBUG', 'True').lower() in ('1', 'true', 'yes', 'y')
 
 # Configuration de la sécurité en production
 if not DEBUG:
-    # En production
-    SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SECURE = True
+    # En production - Configuration HTTPS et sécurité
+    # Redirection HTTP vers HTTPS
     SECURE_SSL_REDIRECT = True
-    SECURE_HSTS_SECONDS = 31536000
+    # Configuration pour reverse proxy (Railway, nginx, etc.)
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    # HSTS (HTTP Strict Transport Security)
+    SECURE_HSTS_SECONDS = int(os.getenv('SECURE_HSTS_SECONDS', '31536000'))  # 1 an par défaut
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
-    SECURE_REFERRER_POLICY = 'same-origin'
+    # Cookies sécurisés
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SESSION_COOKIE_HTTPONLY = True
+    CSRF_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = 'None'  # Nécessaire pour les requêtes cross-origin
+    CSRF_COOKIE_SAMESITE = 'None'
+    # En-têtes de sécurité
+    SECURE_REFERRER_POLICY = os.getenv('SECURE_REFERRER_POLICY', 'strict-origin-when-cross-origin')
     X_FRAME_OPTIONS = 'DENY'
     SECURE_CONTENT_TYPE_NOSNIFF = True
     SECURE_BROWSER_XSS_FILTER = True
@@ -834,20 +844,9 @@ from config.optimizations.logging import get_logging_config  # noqa: E402
 LOGGING = get_logging_config()
 
 # Security hardening in production
+# Note: La configuration HTTPS principale est définie plus haut (lignes 59-71)
+# Cette section peut être utilisée pour des configurations de sécurité additionnelles si nécessaire
 if not DEBUG:
-    SECURE_BROWSER_XSS_FILTER = True
-    SECURE_CONTENT_TYPE_NOSNIFF = True
-    SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SECURE = True
-    SESSION_COOKIE_HTTPONLY = True
-    CSRF_COOKIE_HTTPONLY = True
-    SECURE_SSL_REDIRECT = True
-    # Si derrière un reverse proxy (ex: nginx/elb) qui ajoute X-Forwarded-Proto
-    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-    SECURE_HSTS_SECONDS = int(os.getenv('SECURE_HSTS_SECONDS', '31536000'))
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    SECURE_HSTS_PRELOAD = True
-    # Cookies et en-têtes sécurité additionnels
-    SESSION_COOKIE_SAMESITE = 'None'
-    CSRF_COOKIE_SAMESITE = 'None'
-    SECURE_REFERRER_POLICY = os.getenv('SECURE_REFERRER_POLICY', 'strict-origin-when-cross-origin')
+    # Les paramètres de sécurité HTTPS sont déjà configurés dans la section précédente
+    # Cette section est réservée pour des configurations de sécurité additionnelles
+    pass

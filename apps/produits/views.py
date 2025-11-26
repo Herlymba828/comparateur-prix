@@ -891,18 +891,23 @@ class ProduitViewSet(viewsets.ModelViewSet):
         return ProduitDetailSerializer
     
     def get_queryset(self):
-        queryset = super().get_queryset()
-        
-        # Annoter avec les prix agrégés pour toutes les actions (list et retrieve)
-        # Utiliser filter pour ne compter que les prix disponibles
-        queryset = queryset.annotate(
-            prix_moyen_agg=Avg('prix__prix_actuel', filter=Q(prix__est_disponible=True)),
-            prix_min_agg=Min('prix__prix_actuel', filter=Q(prix__est_disponible=True)),
-            prix_max_agg=Max('prix__prix_actuel', filter=Q(prix__est_disponible=True)),
-            nombre_magasins_agg=Count('prix', distinct=True, filter=Q(prix__est_disponible=True))
-        )
-        
-        return queryset
+        try:
+            queryset = super().get_queryset()
+            
+            # Annoter avec les prix agrégés pour toutes les actions (list et retrieve)
+            # Utiliser filter pour ne compter que les prix disponibles
+            queryset = queryset.annotate(
+                prix_moyen_agg=Avg('prix__prix_actuel', filter=Q(prix__est_disponible=True)),
+                prix_min_agg=Min('prix__prix_actuel', filter=Q(prix__est_disponible=True)),
+                prix_max_agg=Max('prix__prix_actuel', filter=Q(prix__est_disponible=True)),
+                nombre_magasins_agg=Count('prix', distinct=True, filter=Q(prix__est_disponible=True))
+            )
+            
+            return queryset
+        except Exception as e:
+            logger.error(f"Erreur dans ProduitViewSet.get_queryset: {e}", exc_info=True)
+            # Retourner un queryset vide en cas d'erreur plutôt que de planter
+            return Produit.objects.none()
     
     def list(self, request, *args, **kwargs):
         """Liste des produits avec logs détaillés"""
@@ -911,21 +916,21 @@ class ProduitViewSet(viewsets.ModelViewSet):
         ip_address = request.META.get('REMOTE_ADDR', 'unknown')
         user_id = getattr(request.user, 'id', None) if request.user.is_authenticated else None
         
-        # Extraire les paramètres de filtrage importants
-        prix_min = request.query_params.get('prix_min')
-        prix_max = request.query_params.get('prix_max')
-        ordering = request.query_params.get('ordering')
-        search = request.query_params.get('search')
-        page = request.query_params.get('page', 1)
-        page_size = request.query_params.get('page_size')
-        
-        logger.info(
-            f"[PRODUITS] Début requête 'list' - User ID: {user_id}, IP: {ip_address}, "
-            f"Prix min: {prix_min}, Prix max: {prix_max}, Ordering: {ordering}, "
-            f"Search: {search}, Page: {page}, Page size: {page_size}"
-        )
-        
         try:
+            # Extraire les paramètres de filtrage importants
+            prix_min = request.query_params.get('prix_min')
+            prix_max = request.query_params.get('prix_max')
+            ordering = request.query_params.get('ordering')
+            search = request.query_params.get('search')
+            page = request.query_params.get('page', 1)
+            page_size = request.query_params.get('page_size')
+            
+            logger.info(
+                f"[PRODUITS] Début requête 'list' - User ID: {user_id}, IP: {ip_address}, "
+                f"Prix min: {prix_min}, Prix max: {prix_max}, Ordering: {ordering}, "
+                f"Search: {search}, Page: {page}, Page size: {page_size}"
+            )
+            
             # Appeler la méthode parent pour le traitement normal
             response = super().list(request, *args, **kwargs)
             
