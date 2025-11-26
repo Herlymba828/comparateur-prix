@@ -387,11 +387,37 @@ else:
             else:
                 DB_ENGINE = 'postgresql'  # Par défaut
         else:
-            # Configuration manuelle pour la production
+            # Aucune URL de base de données n'est définie
+            # En production Railway, DATABASE_URL ou DATABASE_PUBLIC_URL doivent être définis automatiquement
+            import logging
+            logger = logging.getLogger(__name__)
+            
+            # Vérifier si on est sur Railway
+            is_railway_env = bool(os.getenv('RAILWAY_ENVIRONMENT') or os.getenv('RAILWAY_PROJECT_ID'))
+            
+            if is_railway_env:
+                # Sur Railway, les variables DATABASE_URL doivent être définies automatiquement
+                logger.error(
+                    "⚠️  DATABASE_URL et DATABASE_PUBLIC_URL ne sont pas définies sur Railway.\n"
+                    "Vérifiez que le service PostgreSQL est bien lié à votre service Django.\n"
+                    "Dans Railway Dashboard:\n"
+                    "  1. Allez dans votre service Django\n"
+                    "  2. Cliquez sur 'Variables'\n"
+                    "  3. Vérifiez que DATABASE_URL ou DATABASE_PUBLIC_URL est présent\n"
+                    "  4. Si absent, ajoutez-le manuellement depuis le service PostgreSQL"
+                )
+            
+            # Configuration manuelle pour la production (fallback)
             # Détecter si on est en local (localhost) pour désactiver SSL
             db_host = os.getenv('POSTGRES_HOST', 'localhost')
             is_local = db_host in ('localhost', '127.0.0.1')
             ssl_require_env = os.getenv('POSTGRES_SSL_REQUIRE', 'False' if is_local else 'True')
+            
+            if is_railway_env and is_local:
+                logger.warning(
+                    "⚠️  Utilisation de localhost comme HOST PostgreSQL en production Railway.\n"
+                    "Cela ne fonctionnera pas. Veuillez définir DATABASE_URL ou DATABASE_PUBLIC_URL."
+                )
             
             DATABASES = {
                 'default': {
