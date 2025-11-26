@@ -1,11 +1,24 @@
 # Guide API d'Inscription Utilisateur
 
-Ce guide explique comment utiliser l'API d'inscription (`POST /api/utilisateurs/`).
+Ce guide explique comment utiliser l'API d'inscription.
 
-## 📋 Endpoint
+## 📋 Endpoints Disponibles
 
-```
+Deux endpoints sont disponibles pour l'inscription (ils utilisent le même serializer et acceptent les mêmes données) :
+
+1. **`POST /api/utilisateurs/`** - Via ViewSet (recommandé pour intégration avec CRUD)
+2. **`POST /api/auth/register/`** - Via RegisterView (dédié à l'authentification)
+
+Les deux endpoints acceptent exactement les mêmes champs et retournent la même réponse.
+
+### Exemple d'utilisation
+
+```bash
+# Option 1 : Via /api/utilisateurs/
 POST /api/utilisateurs/
+
+# Option 2 : Via /api/auth/register/
+POST /api/auth/register/
 ```
 
 ## ✅ Champs Requis
@@ -24,7 +37,7 @@ POST /api/utilisateurs/
 | `first_name` | string | Prénom |
 | `last_name` | string | Nom de famille |
 | `type_utilisateur` | string | Type d'utilisateur (`particulier`, `professionnel`, `administrateur`) |
-| `telephone` | string | Numéro de téléphone (format international recommandé) |
+| `telephone` | string | Numéro de téléphone (format international recommandé). **Note :** Le numéro est automatiquement normalisé (ajout de `+33` pour les numéros français si nécessaire) |
 | `code_postal` | string | Code postal |
 | `ville` | string | Ville |
 | `date_naissance` | string | Date de naissance (format ISO: `YYYY-MM-DD`) |
@@ -118,6 +131,8 @@ const data = await response.json();
 ```
 
 **Solution :** Utiliser un mot de passe d'au moins 8 caractères.
+
+**Note :** Le message d'erreur exact peut varier selon la langue configurée sur le serveur.
 
 ---
 
@@ -266,10 +281,19 @@ const data = await response.json();
 
 ### Champs de la Réponse
 
-- **`user`** : Objet utilisateur créé
+- **`user`** : Objet utilisateur créé (contient tous les champs de l'utilisateur, voir ci-dessous)
 - **`refresh`** : Token JWT de rafraîchissement (si JWT activé)
 - **`access`** : Token JWT d'accès (si JWT activé)
 - **`activation_pending`** : `true` si l'email d'activation doit être vérifié
+
+### Champs de l'Objet User
+
+L'objet `user` contient les champs suivants (et d'autres) :
+- **Champs de base** : `id`, `uuid`, `username`, `email`, `first_name`, `last_name`
+- **Profil** : `type_utilisateur`, `telephone`, `date_naissance`, `code_postal`, `ville`
+- **Métadonnées** : `date_creation`, `derniere_connexion`, `est_verifie`
+- **Fidélité** : `points_fidelite`, `niveau_fidelite`, `total_achats`, `nombre_commandes`
+- **Champs supplémentaires** : `profil`, `statistiques_fidelite`, `age`, `est_nouveau`, `est_client_fidele`
 
 ---
 
@@ -360,8 +384,9 @@ Future<Map<String, dynamic>> registerUser({
 
 ## 🔗 Endpoints Liés
 
-- **Connexion** : `POST /api/utilisateurs/connexion/`
-- **Activation compte** : `GET /api/utilisateurs/activer/<uidb64>/<token>/`
+- **Inscription alternative** : `POST /api/auth/register/` (équivalent à `/api/utilisateurs/`)
+- **Connexion** : `POST /api/auth/login/` ou `POST /api/utilisateurs/connexion/`
+- **Activation compte** : `GET /api/utilisateurs/activer/<uidb64>/<token>/` ou `POST /api/auth/activate/`
 - **Réinitialisation mot de passe** : `POST /api/utilisateurs/reset-password/`
 
 ---
