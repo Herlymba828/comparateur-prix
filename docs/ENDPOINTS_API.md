@@ -42,7 +42,7 @@
 
 ### Base CRUD (ViewSet)
 - `GET /api/utilisateurs/` - Liste des utilisateurs
-- `POST /api/utilisateurs/` - Créer un utilisateur
+- `POST /api/utilisateurs/` - Créer un utilisateur (📖 [Guide d'inscription](./API_INSCRIPTION.md))
 - `GET /api/utilisateurs/{id}/` - Détails d'un utilisateur
 - `PUT /api/utilisateurs/{id}/` - Mettre à jour un utilisateur (complet)
 - `PATCH /api/utilisateurs/{id}/` - Mettre à jour un utilisateur (partiel)
