@@ -45,8 +45,13 @@ echo "   🔗 API Docs: http://0.0.0.0:$PORT/api/docs/"
 echo "   ⚙️  Workers: 2"
 echo "   ⏱️  Timeout: 120s"
 
+# Attendre un peu pour que Django soit complètement initialisé avant de démarrer Gunicorn
+# Cela permet à Railway de détecter que l'application est prête
+sleep 2
+
 # Utiliser exec pour que Gunicorn remplace le processus shell
 # Ajouter des options pour améliorer la stabilité
+# Note: Railway fait un health check automatique, donc on doit s'assurer que l'application répond rapidement
 exec gunicorn config.wsgi:application \
     --bind 0.0.0.0:$PORT \
     --workers 2 \
@@ -56,5 +61,6 @@ exec gunicorn config.wsgi:application \
     --max-requests-jitter 50 \
     --access-logfile - \
     --error-logfile - \
-    --log-level info
+    --log-level info \
+    --preload
 
