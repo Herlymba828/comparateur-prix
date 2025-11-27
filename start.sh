@@ -4,11 +4,19 @@
 
 echo "🚀 Démarrage de l'application Django..."
 
-# Vérifier que le port est défini
+# Vérifier que le port est défini (Railway définit automatiquement PORT)
 if [ -z "$PORT" ]; then
     echo "⚠️  PORT non défini, utilisation du port 8080 par défaut"
     export PORT=8080
+else
+    echo "📡 Port détecté depuis Railway: $PORT"
 fi
+
+# Afficher toutes les variables d'environnement liées au port pour le diagnostic
+echo "🔍 Variables d'environnement Railway:"
+echo "   PORT=$PORT"
+echo "   RAILWAY_ENVIRONMENT=${RAILWAY_ENVIRONMENT:-non défini}"
+echo "   RAILWAY_PROJECT_ID=${RAILWAY_PROJECT_ID:-non défini}"
 
 # Appliquer les migrations (ne pas faire échouer le démarrage si ça échoue)
 echo "📦 Application des migrations..."
@@ -30,8 +38,12 @@ else
 fi
 
 # Démarrer Gunicorn (c'est la partie critique - doit toujours démarrer)
-echo "✅ Démarrage du serveur Gunicorn sur le port $PORT..."
-echo "   Health check disponible sur: http://0.0.0.0:$PORT/api/health/"
+echo "✅ Démarrage du serveur Gunicorn..."
+echo "   📍 Écoute sur: 0.0.0.0:$PORT"
+echo "   🔗 Health check: http://0.0.0.0:$PORT/api/health/"
+echo "   🔗 API Docs: http://0.0.0.0:$PORT/api/docs/"
+echo "   ⚙️  Workers: 2"
+echo "   ⏱️  Timeout: 120s"
 
 # Utiliser exec pour que Gunicorn remplace le processus shell
 # Ajouter des options pour améliorer la stabilité
