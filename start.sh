@@ -45,9 +45,9 @@ echo "   🔗 API Docs: http://0.0.0.0:$PORT/api/docs/"
 echo "   ⚙️  Workers: 2"
 echo "   ⏱️  Timeout: 120s"
 
-# Attendre un peu pour que Django soit complètement initialisé avant de démarrer Gunicorn
-# Cela permet à Railway de détecter que l'application est prête
-sleep 2
+# Note: Ne pas ajouter de sleep ici car Railway fait un health check très rapidement
+# Gunicorn avec --preload charge l'application avant de forker, ce qui est plus rapide
+# L'endpoint /api/health/ et / ne nécessitent pas de base de données, donc ils répondront immédiatement
 
 # Utiliser exec pour que Gunicorn remplace le processus shell
 # Ajouter des options pour améliorer la stabilité

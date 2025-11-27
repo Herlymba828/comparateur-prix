@@ -63,10 +63,14 @@ urlpatterns = [
 
 # Vue pour la racine
 def root_view(request):
-    """Vue pour la racine qui redirige vers la documentation API."""
+    """Vue pour la racine qui redirige vers la documentation API.
+    Cette vue ne nécessite pas de connexion à la base de données,
+    ce qui permet à Railway de faire un health check même si la DB n'est pas configurée.
+    """
     return JsonResponse({
         'message': 'Comparateur Prix API',
         'version': '1.0.0',
+        'status': 'ok',  # Pour Railway health check
         'documentation': '/api/docs/',
         'health_check': '/api/health/',
         'endpoints': {
