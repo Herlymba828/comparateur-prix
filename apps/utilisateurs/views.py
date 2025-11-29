@@ -43,7 +43,7 @@ import ipaddress
 from .models import Utilisateur, ProfilUtilisateur, Abonnement, HistoriqueConnexion, HistoriqueRemises
 from .utils import generer_token_activation, verifier_token_activation, generer_token_reset, verifier_token_reset
 from .utils import make_activation_uid_token, check_activation_uid_token, build_activation_link_uid
-from .tasks import send_activation_email, send_reset_email, send_login_otp_email, send_activation_email_uid
+from .tasks import send_activation_email, send_reset_email, send_login_otp_email, send_activation_email_uid, send_activation_code_email
 from .serializers import (
     InscriptionSerializer, ConnexionSerializer, UtilisateurSerializer,
     MiseAJourUtilisateurSerializer, ProfilUtilisateurSerializer,
@@ -210,25 +210,68 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
                 except Exception as e:
                     logger.warning(f"Erreur lors de la génération des tokens JWT: {e}")
             
-            # Indiquer si l'activation est en attente
+            # Indiquer si l'activation est en attente et inclure l'ID utilisateur pour la vérification du code
             if not getattr(user, 'est_verifie', False):
                 response_data['activation_pending'] = True
+                response_data['user_id'] = user.id  # Nécessaire pour vérifier le code d'activation
             
-            # Essayer d'envoyer l'email d'activation (ne pas faire échouer l'inscription si ça échoue)
+            # Essayer d'envoyer l'email d'activation avec code (ne pas faire échouer l'inscription si ça échoue)
             try:
-                from .utils import make_activation_uid_token, build_activation_link_uid
-                uidb64, token = make_activation_uid_token(user)
-                activation_url = build_activation_link_uid(uidb64, token)
+                from .utils import generer_code_activation, stocker_code_activation
+                from .tasks import send_activation_code_email
+                activation_code = generer_code_activation()
+                stocker_code_activation(user.id, activation_code, expiration_minutes=15)
                 if user.email:
                     try:
-                        send_activation_email_uid.delay(user.email, activation_url)
-                    except (RequestsConnectionError, Exception) as email_err:
+                        send_activation_code_email.delay(user.email, activation_code)
+                        logger.info(f"Code d'activation généré et email envoyé pour utilisateur ID: {user.id}, Email: {user.email}")
+                    except Exception as email_err:
                         # Si Celery/Redis n'est pas disponible, logger mais ne pas faire échouer
-                        logger.warning(f"Impossible d'envoyer l'email d'activation (Celery/Redis peut être indisponible): {email_err}")
-                        print(f"[WARNING] Email d'activation non envoyé: {email_err}", file=sys.stdout, flush=True)
+                        import traceback
+                        error_traceback = traceback.format_exc()
+                        error_msg = str(email_err)
+                        error_type = type(email_err).__name__
+                        ip_address = request.META.get('REMOTE_ADDR', 'unknown')
+                        
+                        # Log détaillé de l'erreur
+                        error_details = (
+                            f"❌ Erreur envoi email d'activation\n"
+                            f"User ID: {user.id}\n"
+                            f"Email: {user.email}\n"
+                            f"IP: {ip_address}\n"
+                            f"Type: {error_type}\n"
+                            f"Message: {error_msg}\n"
+                            f"Traceback:\n{error_traceback}"
+                        )
+                        
+                        # Capturer l'erreur spécifique si c'est un problème d'import de module
+                        if 'No module named' in error_msg:
+                            logger.error(f"Impossible d'envoyer l'email d'activation: Celery/Redis non configuré correctement.\n{error_details}")
+                            print(f"[ERROR] Email d'activation non envoyé: Celery/Redis non configuré. User ID: {user.id}, Email: {user.email}. Vérifiez REDIS_URL dans les variables d'environnement.", file=sys.stderr, flush=True)
+                        elif 'Connection refused' in error_msg or 'ConnectionError' in error_type:
+                            logger.error(f"Impossible d'envoyer l'email d'activation: Erreur de connexion Redis/Celery.\n{error_details}")
+                            print(f"[ERROR] Email d'activation non envoyé: Erreur de connexion Redis/Celery. User ID: {user.id}, Email: {user.email}.", file=sys.stderr, flush=True)
+                        else:
+                            logger.error(f"Impossible d'envoyer l'email d'activation (Celery/Redis peut être indisponible).\n{error_details}")
+                            print(f"[ERROR] Email d'activation non envoyé: {error_type} - {error_msg}. User ID: {user.id}, Email: {user.email}.", file=sys.stderr, flush=True)
             except Exception as email_err:
                 # Ne pas faire échouer l'inscription si l'email ne peut pas être envoyé
-                logger.warning(f"Erreur lors de la préparation de l'email d'activation: {email_err}")
+                import traceback
+                error_traceback = traceback.format_exc()
+                error_type = type(email_err).__name__
+                ip_address = request.META.get('REMOTE_ADDR', 'unknown')
+                user_id = getattr(user, 'id', 'unknown') if 'user' in locals() else 'unknown'
+                
+                error_details = (
+                    f"❌ Erreur lors de la préparation de l'email d'activation\n"
+                    f"User ID: {user_id}\n"
+                    f"IP: {ip_address}\n"
+                    f"Type: {error_type}\n"
+                    f"Message: {str(email_err)}\n"
+                    f"Traceback:\n{error_traceback}"
+                )
+                logger.error(error_details)
+                print(f"[ERROR] Erreur préparation email d'activation: {error_type} - {str(email_err)}. User ID: {user_id}.", file=sys.stderr, flush=True)
             
             return Response(response_data, status=status.HTTP_201_CREATED)
             
@@ -329,6 +372,11 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         """Endpoint pour récupérer l'utilisateur connecté"""
         serializer = self.get_serializer(request.user)
         return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'], url_path='me')
+    def me(self, request):
+        """Alias pour /api/utilisateurs/me/ (compatibilité frontend)"""
+        return self.moi(request)
 
     @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def changer_mot_de_passe(self, request):
@@ -610,6 +658,13 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated], url_path='twofa-setup')
     def twofa_setup(self, request):
         """Crée/configure un appareil TOTP et renvoie un QR code (base64 PNG) et l'otpauth URL."""
+        # Logger l'accès pour diagnostic
+        ip_address = request.META.get('REMOTE_ADDR', 'unknown')
+        auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+        logger.info(
+            f"[2FA] Setup demandé - User ID: {request.user.id if request.user.is_authenticated else 'N/A'}, "
+            f"IP: {ip_address}, Auth header présent: {bool(auth_header)}"
+        )
         user = request.user
         device, _ = TOTPDevice.objects.get_or_create(user=user, name="totp-default")
         img = qrcode.make(device.config_url)
@@ -646,6 +701,13 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated], url_path='twofa-disable')
     def twofa_disable(self, request):
         """Désactive le 2FA en supprimant les appareils TOTP de l'utilisateur."""
+        # Logger l'accès pour diagnostic
+        ip_address = request.META.get('REMOTE_ADDR', 'unknown')
+        auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+        logger.info(
+            f"[2FA] Disable demandé - User ID: {request.user.id if request.user.is_authenticated else 'N/A'}, "
+            f"IP: {ip_address}, Auth header présent: {bool(auth_header)}"
+        )
         qs = TOTPDevice.objects.filter(user=request.user)
         count = qs.count()
         qs.delete()
@@ -663,14 +725,59 @@ class RegisterView(APIView):
         s = InscriptionSerializer(data=request.data)
         s.is_valid(raise_exception=True)
         user = s.save()
-        # Générer uid/token et envoyer email d'activation
+        # Générer code d'activation et envoyer email
         try:
-            uidb64, token = make_activation_uid_token(user)
-            activation_url = build_activation_link_uid(uidb64, token)
+            from .utils import generer_code_activation, stocker_code_activation
+            from .tasks import send_activation_code_email
+            activation_code = generer_code_activation()
+            stocker_code_activation(user.id, activation_code, expiration_minutes=15)
             if user.email:
-                send_activation_email_uid.delay(user.email, activation_url)
-        except Exception:
-            pass
+                try:
+                    send_activation_code_email.delay(user.email, activation_code)
+                    logger.info(f"Code d'activation généré et email envoyé pour utilisateur ID: {user.id}, Email: {user.email}")
+                except Exception as email_err:
+                    import traceback
+                    error_traceback = traceback.format_exc()
+                    error_msg = str(email_err)
+                    error_type = type(email_err).__name__
+                    ip_address = request.META.get('REMOTE_ADDR', 'unknown')
+                    
+                    error_details = (
+                        f"❌ Erreur envoi email d'activation (RegisterView)\n"
+                        f"User ID: {user.id}\n"
+                        f"Email: {user.email}\n"
+                        f"IP: {ip_address}\n"
+                        f"Type: {error_type}\n"
+                        f"Message: {error_msg}\n"
+                        f"Traceback:\n{error_traceback}"
+                    )
+                    
+                    if 'No module named' in error_msg:
+                        logger.error(f"Impossible d'envoyer l'email d'activation: Celery/Redis non configuré.\n{error_details}")
+                        print(f"[ERROR] Email d'activation non envoyé: Celery/Redis non configuré. User ID: {user.id}.", file=sys.stderr, flush=True)
+                    elif 'Connection refused' in error_msg or 'ConnectionError' in error_type:
+                        logger.error(f"Impossible d'envoyer l'email d'activation: Erreur de connexion Redis/Celery.\n{error_details}")
+                        print(f"[ERROR] Email d'activation non envoyé: Erreur de connexion. User ID: {user.id}.", file=sys.stderr, flush=True)
+                    else:
+                        logger.error(f"Impossible d'envoyer l'email d'activation.\n{error_details}")
+                        print(f"[ERROR] Email d'activation non envoyé: {error_type} - {error_msg}. User ID: {user.id}.", file=sys.stderr, flush=True)
+        except Exception as e:
+            import traceback
+            error_traceback = traceback.format_exc()
+            error_type = type(e).__name__
+            ip_address = request.META.get('REMOTE_ADDR', 'unknown')
+            user_id = getattr(user, 'id', 'unknown') if 'user' in locals() else 'unknown'
+            
+            error_details = (
+                f"❌ Erreur lors de la préparation de l'email d'activation (RegisterView)\n"
+                f"User ID: {user_id}\n"
+                f"IP: {ip_address}\n"
+                f"Type: {error_type}\n"
+                f"Message: {str(e)}\n"
+                f"Traceback:\n{error_traceback}"
+            )
+            logger.error(error_details)
+            print(f"[ERROR] Erreur préparation email d'activation: {error_type} - {str(e)}. User ID: {user_id}.", file=sys.stderr, flush=True)
         user_payload = UtilisateurSerializer(user).data
         response_payload = {'user': user_payload}
         if getattr(settings, 'USE_JWT_AUTH', False) and HAS_JWT and RefreshToken is not None:
@@ -686,6 +793,7 @@ class RegisterView(APIView):
                 pass
         if not getattr(user, 'est_verifie', False):
             response_payload['activation_pending'] = True
+            response_payload['user_id'] = user.id  # Nécessaire pour vérifier le code d'activation
         return Response(response_payload, status=status.HTTP_201_CREATED)
 
 
@@ -715,10 +823,92 @@ class ActivateView(APIView):
         return Response({"detail": "Compte activé."})
 
     def post(self, request):
+        # Vérifier si c'est une activation par code ou par token
+        code = request.data.get('code')
+        user_id = request.data.get('user_id')
+        ip_address = request.META.get('REMOTE_ADDR', 'unknown')
+        
+        # Activation par code (nouveau système)
+        if code and user_id:
+            from .utils import verifier_code_activation, supprimer_code_activation
+            try:
+                user = Utilisateur.objects.get(id=user_id)
+            except Utilisateur.DoesNotExist:
+                logger.warning(f"Tentative d'activation avec code: Utilisateur introuvable. User ID: {user_id}, IP: {ip_address}")
+                return Response({"detail": "Utilisateur introuvable."}, status=status.HTTP_404_NOT_FOUND)
+            except Exception as e:
+                import traceback
+                error_details = (
+                    f"❌ Erreur lors de la récupération de l'utilisateur pour activation\n"
+                    f"User ID: {user_id}\n"
+                    f"IP: {ip_address}\n"
+                    f"Type: {type(e).__name__}\n"
+                    f"Message: {str(e)}\n"
+                    f"Traceback:\n{traceback.format_exc()}"
+                )
+                logger.error(error_details)
+                print(f"[ERROR] Erreur récupération utilisateur pour activation: {type(e).__name__} - {str(e)}. User ID: {user_id}.", file=sys.stderr, flush=True)
+                return Response({"detail": "Erreur lors de l'activation du compte."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            try:
+                if not verifier_code_activation(user_id, code):
+                    logger.warning(f"Tentative d'activation avec code invalide. User ID: {user_id}, Email: {user.email}, IP: {ip_address}")
+                    return Response({"detail": "Code d'activation invalide ou expiré."}, status=status.HTTP_400_BAD_REQUEST)
+            except Exception as e:
+                import traceback
+                error_details = (
+                    f"❌ Erreur lors de la vérification du code d'activation\n"
+                    f"User ID: {user_id}\n"
+                    f"Email: {user.email}\n"
+                    f"IP: {ip_address}\n"
+                    f"Type: {type(e).__name__}\n"
+                    f"Message: {str(e)}\n"
+                    f"Traceback:\n{traceback.format_exc()}"
+                )
+                logger.error(error_details)
+                print(f"[ERROR] Erreur vérification code d'activation: {type(e).__name__} - {str(e)}. User ID: {user_id}.", file=sys.stderr, flush=True)
+                return Response({"detail": "Erreur lors de la vérification du code."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            # Activer le compte
+            try:
+                updates = []
+                if not user.is_active:
+                    user.is_active = True
+                    updates.append('is_active')
+                if not user.est_verifie:
+                    user.est_verifie = True
+                    updates.append('est_verifie')
+                if updates:
+                    user.save(update_fields=updates)
+                    logger.info(f"Compte activé avec succès. User ID: {user_id}, Email: {user.email}, IP: {ip_address}")
+                
+                # Supprimer le code après utilisation
+                try:
+                    supprimer_code_activation(user_id)
+                except Exception as e:
+                    logger.warning(f"Impossible de supprimer le code d'activation après utilisation. User ID: {user_id}, Erreur: {str(e)}")
+                
+                return Response({"detail": "Compte activé avec succès."})
+            except Exception as e:
+                import traceback
+                error_details = (
+                    f"❌ Erreur lors de l'activation du compte\n"
+                    f"User ID: {user_id}\n"
+                    f"Email: {user.email}\n"
+                    f"IP: {ip_address}\n"
+                    f"Type: {type(e).__name__}\n"
+                    f"Message: {str(e)}\n"
+                    f"Traceback:\n{traceback.format_exc()}"
+                )
+                logger.error(error_details)
+                print(f"[ERROR] Erreur activation compte: {type(e).__name__} - {str(e)}. User ID: {user_id}.", file=sys.stderr, flush=True)
+                return Response({"detail": "Erreur lors de l'activation du compte."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        # Activation par token (ancien système - compatibilité)
         uid = request.data.get('uid')
         token = request.data.get('token')
         if not uid or not token:
-            return Response({"detail": "uid et token requis."}, status=400)
+            return Response({"detail": "uid et token requis, ou code et user_id requis."}, status=400)
         user = check_activation_uid_token(uid, token, Utilisateur)
         if not user:
             return Response({"detail": "Token invalide ou expiré."}, status=400)
@@ -894,8 +1084,74 @@ def confirmer_reset_mot_de_passe(request, token: str):
 
 @api_view(["GET"])
 @permission_classes([permissions.IsAuthenticated])
+def auth_me_view(request):
+    """Endpoint /api/auth/me/ pour récupérer l'utilisateur connecté (alias vers /api/utilisateurs/moi/)"""
+    serializer = UtilisateurSerializer(request.user)
+    return Response(serializer.data)
+
+@api_view(["GET"])
+@permission_classes([permissions.AllowAny])
+def verify_token(request):
+    """Vérifie si le token JWT actuel est valide et retourne des informations sur l'utilisateur"""
+    from rest_framework_simplejwt.authentication import JWTAuthentication
+    from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+    
+    auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+    
+    if not auth_header:
+        return Response({
+            'valid': False,
+            'detail': 'Aucun token fourni',
+            'suggestion': 'Ajoutez le header: Authorization: Bearer <token>'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        jwt_auth = JWTAuthentication()
+        user, token = jwt_auth.authenticate(request)
+        
+        if user:
+            return Response({
+                'valid': True,
+                'user_id': user.id,
+                'username': user.username,
+                'email': user.email,
+                'token_type': 'access',
+                'expires_at': token.get('exp') if hasattr(token, 'get') else None
+            })
+        else:
+            return Response({
+                'valid': False,
+                'detail': 'Token invalide',
+                'suggestion': 'Rafraîchissez votre token avec /api/auth/token/refresh/'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+    except (InvalidToken, TokenError) as e:
+        return Response({
+            'valid': False,
+            'detail': f'Token invalide: {str(e)}',
+            'error_type': type(e).__name__,
+            'suggestion': 'Rafraîchissez votre token avec /api/auth/token/refresh/',
+            'refresh_endpoint': '/api/auth/token/refresh/'
+        }, status=status.HTTP_401_UNAUTHORIZED)
+    except Exception as e:
+        logger.error(f"Erreur lors de la vérification du token: {type(e).__name__} - {str(e)}", exc_info=True)
+        return Response({
+            'valid': False,
+            'detail': 'Erreur lors de la vérification du token',
+            'error_type': type(e).__name__,
+            'suggestion': 'Rafraîchissez votre token avec /api/auth/token/refresh/'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
 def lister_sessions(request):
     """Liste les sessions actives de l'utilisateur courant."""
+    # Logger l'accès pour diagnostic
+    ip_address = request.META.get('REMOTE_ADDR', 'unknown')
+    auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+    logger.info(
+        f"[SESSIONS] Liste demandée - User ID: {request.user.id if request.user.is_authenticated else 'N/A'}, "
+        f"IP: {ip_address}, Auth header présent: {bool(auth_header)}"
+    )
     now = timezone.now()
     sessions = []
     for s in Session.objects.filter(expire_date__gte=now):
@@ -1009,8 +1265,12 @@ def google_login(request):
             refresh = RefreshToken.for_user(user)
             payload.update({'refresh': str(refresh), 'access': str(refresh.access_token)})
         return Response(payload)
+    except requests.RequestException as e:
+        logger.error(f"Erreur réseau lors de la vérification du token Google: {e}")
+        return Response({'detail': 'Erreur lors de la vérification du token Google. Veuillez réessayer.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     except Exception as e:
-        return Response({'detail': f'Erreur Google OAuth: {e}'}, status=status.HTTP_400_BAD_REQUEST)
+        logger.error(f"Erreur Google OAuth: {e}", exc_info=True)
+        return Response({'detail': f'Erreur lors de la connexion Google: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(["POST"])

@@ -35,10 +35,11 @@ except ImportError:
 
 urlpatterns = [
     path(settings.ADMIN_URL, admin.site.urls),
+    # Important: include utilisateurs URLs FIRST at root so their internal 'api/' prefixes map correctly
+    # This ensures /api/auth/* routes are matched before other /api/* routes
+    path('', include('apps.utilisateurs.urls')),
     path('api/produits/', include('apps.produits.urls')),
     path('api/magasins/', include('apps.magasins.urls')),
-    # Important: include utilisateurs URLs at root so their internal 'api/' prefixes map correctly
-    path('', include('apps.utilisateurs.urls')),
     path('api/recommandations/', include('apps.recommandations.urls')),
     path('api/analyses/', include('apps.analyses.urls')),
     path('api/', include('apps.api.urls')),
