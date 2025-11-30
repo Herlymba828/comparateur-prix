@@ -15,7 +15,13 @@ class Command(BaseCommand):
         parser.add_argument("--batch", type=int, default=1000, help="Bulk batch size (default: 1000)")
 
     def handle(self, *args, **options):
-        es = get_es_client()
+        try:
+            es = get_es_client()
+        except Exception as e:
+            self.stdout.write(self.style.ERROR(f"❌ Impossible de se connecter à Elasticsearch: {type(e).__name__} - {str(e)}"))
+            self.stdout.write(self.style.WARNING("Vérifiez que Elasticsearch est démarré et accessible."))
+            return
+        
         recreate = options["recreate"]
         reindex = options["reindex"]
         batch_size = options["batch"]
@@ -23,10 +29,16 @@ class Command(BaseCommand):
         if recreate:
             try:
                 es.indices.delete(index=INDEX_PRODUCTS, ignore_unavailable=True)
-            except Exception:
-                pass
-        ensure_indices()
-        self.stdout.write(self.style.SUCCESS("Elasticsearch indices ensured."))
+                self.stdout.write(self.style.SUCCESS("✓ Index produits supprimé"))
+            except Exception as e:
+                self.stdout.write(self.style.WARNING(f"⚠️  Impossible de supprimer l'index: {type(e).__name__} - {str(e)}"))
+        
+        try:
+            ensure_indices()
+            self.stdout.write(self.style.SUCCESS("✓ Elasticsearch indices créés/vérifiés"))
+        except Exception as e:
+            self.stdout.write(self.style.ERROR(f"❌ Impossible de créer les index: {type(e).__name__} - {str(e)}"))
+            return
 
         if not reindex and not recreate:
             self.stdout.write("No reindex requested. Use --reindex to bulk index all products.")
@@ -38,7 +50,7 @@ class Command(BaseCommand):
             .order_by("id")
         )
         total = qs.count()
-        self.stdout.write(f"Indexing {total} products in batches of {batch_size}...")
+        self.stdout.write(f"Indexation de {total} produits par lots de {batch_size}...")
 
         def gen_actions():
             for p in qs.iterator(chunk_size=batch_size):
@@ -50,5 +62,10 @@ class Command(BaseCommand):
                     "_source": doc,
                 }
 
-        success, _ = bulk(es, gen_actions(), chunk_size=batch_size, raise_on_error=False)
-        self.stdout.write(self.style.SUCCESS(f"Bulk indexed {success} documents."))
+        try:
+            success, errors = bulk(es, gen_actions(), chunk_size=batch_size, raise_on_error=False, request_timeout=10)
+            self.stdout.write(self.style.SUCCESS(f"✓ {success} documents indexés avec succès"))
+            if errors:
+                self.stdout.write(self.style.WARNING(f"⚠️  {len(errors)} erreurs lors de l'indexation"))
+        except Exception as e:
+            self.stdout.write(self.style.ERROR(f"❌ Erreur lors de l'indexation en masse: {type(e).__name__} - {str(e)}"))

@@ -2,6 +2,7 @@ from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticatedOrReadOnly, IsAuthenticated
+from rest_framework.exceptions import ValidationError
 from rest_framework.pagination import PageNumberPagination
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Q, Avg, Min, Max, Count, StdDev, F, Exists, OuterRef
@@ -13,6 +14,7 @@ from django.conf import settings
 from datetime import timedelta
 from decimal import Decimal
 import logging
+import sys
 from PIL import Image
 import io as _io
 import requests
@@ -448,6 +450,13 @@ class AlertePrixViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def alertes_actives(self, request):
         """Retourne les alertes actives de l'utilisateur"""
+        # Logger l'accès pour diagnostic
+        ip_address = request.META.get('REMOTE_ADDR', 'unknown')
+        auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+        logger.info(
+            f"[ALERTES] Liste demandée - User ID: {request.user.id if request.user.is_authenticated else 'N/A'}, "
+            f"IP: {ip_address}, Auth header présent: {bool(auth_header)}"
+        )
         alertes_actives_qs = self.get_queryset().filter(est_active=True)
         
         # Vérifier les seuils atteints
@@ -949,20 +958,59 @@ class ProduitViewSet(viewsets.ModelViewSet):
             )
             
             return response
+        except ValidationError as e:
+            # Erreur de validation du filtre (ex: catégorie invalide)
+            elapsed = (timezone.now() - start_time).total_seconds()
+            categorie_param = request.query_params.get('categorie')
+            marque_param = request.query_params.get('marque')
+            
+            error_details = (
+                f"[PRODUITS] Erreur de validation du filtre - "
+                f"User ID: {user_id}, IP: {ip_address}, "
+                f"Categorie: {categorie_param}, Marque: {marque_param}, "
+                f"Prix min: {prix_min}, Prix max: {prix_max}, "
+                f"Ordering: {ordering}, Erreur: {str(e)}, "
+                f"Temps écoulé: {elapsed:.3f}s"
+            )
+            logger.warning(error_details)
+            
+            # Retourner une réponse d'erreur de validation (400) avec détails
+            error_response = {
+                'erreur': 'Paramètres de filtrage invalides',
+                'detail': 'Un ou plusieurs paramètres de filtrage sont invalides.',
+                'errors': e.detail if hasattr(e, 'detail') else str(e)
+            }
+            
+            # Ajouter des détails spécifiques si disponibles
+            if hasattr(e, 'detail') and isinstance(e.detail, dict):
+                error_response['errors'] = e.detail
+                # Identifier quel paramètre est invalide
+                if 'categorie' in e.detail:
+                    error_response['message'] = f"La catégorie '{categorie_param}' n'est pas valide. Veuillez utiliser un ID de catégorie existant."
+                elif 'marque' in e.detail:
+                    error_response['message'] = f"La marque '{marque_param}' n'est pas valide. Veuillez utiliser un ID de marque existant."
+            
+            return Response(error_response, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             elapsed = (timezone.now() - start_time).total_seconds()
-            logger.error(
+            import traceback
+            error_traceback = traceback.format_exc()
+            
+            error_details = (
                 f"[PRODUITS] Erreur lors de la récupération de la liste des produits - "
                 f"User ID: {user_id}, IP: {ip_address}, Prix min: {prix_min}, Prix max: {prix_max}, "
-                f"Ordering: {ordering}, Erreur: {str(e)}, Type: {type(e).__name__}, "
-                f"Temps écoulé: {elapsed:.3f}s",
-                exc_info=True
+                f"Ordering: {ordering}, Search: {search}, Erreur: {str(e)}, Type: {type(e).__name__}, "
+                f"Temps écoulé: {elapsed:.3f}s\n"
+                f"Traceback:\n{error_traceback}"
             )
+            logger.error(error_details)
+            print(f"[ERROR] Erreur récupération produits: {type(e).__name__} - {str(e)}. User ID: {user_id}, IP: {ip_address}.", file=sys.stderr, flush=True)
+            
             # Retourner une réponse d'erreur au lieu de lever l'exception
             return Response(
                 {
                     'erreur': 'Erreur lors de la récupération des produits',
-                    'detail': str(e) if settings.DEBUG else 'Une erreur est survenue'
+                    'detail': str(e) if settings.DEBUG else 'Une erreur est survenue. Veuillez réessayer plus tard.'
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
@@ -1048,6 +1096,30 @@ class ProduitViewSet(viewsets.ModelViewSet):
                 nombre_magasins_agg=Count('prix', distinct=True, filter=Q(prix__est_disponible=True))
             )
             
+            # Appliquer l'ordering pour éviter l'avertissement de pagination
+            # IMPORTANT: L'ordering doit TOUJOURS être appliqué avant la pagination
+            from rest_framework.filters import OrderingFilter
+            ordering_param = request.query_params.get('ordering')
+            if ordering_param:
+                # Essayer d'appliquer l'ordering via OrderingFilter
+                try:
+                    ordering_filter = OrderingFilter()
+                    queryset = ordering_filter.filter_queryset(request, queryset, self)
+                    # Vérifier que l'ordering a été appliqué
+                    if not queryset.query.order_by:
+                        # Si l'ordering n'a pas été appliqué, utiliser l'ordering par défaut
+                        queryset = queryset.order_by('nom')
+                except Exception:
+                    # Si l'ordering échoue, utiliser l'ordering par défaut
+                    queryset = queryset.order_by('nom')
+            else:
+                # Si aucun ordering n'est spécifié, appliquer l'ordering par défaut
+                queryset = queryset.order_by('nom')
+            
+            # S'assurer que l'ordering est toujours présent avant la pagination
+            if not queryset.query.order_by:
+                queryset = queryset.order_by('id')  # Fallback sur l'ID si rien ne fonctionne
+            
             total_count = queryset.count()
             logger.debug(f"[PRODUITS] Nombre total de produits (actifs + inactifs): {total_count}")
             
@@ -1109,6 +1181,18 @@ class ProduitViewSet(viewsets.ModelViewSet):
                 Q(categorie__nom__in=categories_defiscalisees) |
                 Q(categorie__sous_categories__nom__in=categories_defiscalisees)
             ).distinct()
+            
+            # Appliquer l'ordering pour éviter l'avertissement de pagination
+            # Utiliser le OrderingFilter pour appliquer l'ordering de manière cohérente
+            from rest_framework.filters import OrderingFilter
+            ordering_filter = OrderingFilter()
+            # Appliquer l'ordering si un paramètre ordering est présent
+            ordering_param = request.query_params.get('ordering')
+            if ordering_param:
+                queryset = ordering_filter.filter_queryset(request, queryset, self)
+            else:
+                # Si aucun ordering n'est spécifié, appliquer l'ordering par défaut
+                queryset = queryset.order_by('nom')
             
             total_count = queryset.count()
             logger.debug(f"[PRODUITS] Nombre de produits défiscalisés trouvés: {total_count}")
@@ -1173,6 +1257,18 @@ class ProduitViewSet(viewsets.ModelViewSet):
             queryset = queryset.annotate(
                 est_homologue_agg=Exists(homologations)
             ).filter(est_homologue_agg=True)
+            
+            # Appliquer l'ordering pour éviter l'avertissement de pagination
+            # Utiliser le OrderingFilter pour appliquer l'ordering de manière cohérente
+            from rest_framework.filters import OrderingFilter
+            ordering_filter = OrderingFilter()
+            # Appliquer l'ordering si un paramètre ordering est présent
+            ordering_param = request.query_params.get('ordering')
+            if ordering_param:
+                queryset = ordering_filter.filter_queryset(request, queryset, self)
+            else:
+                # Si aucun ordering n'est spécifié, appliquer l'ordering par défaut
+                queryset = queryset.order_by('nom')
             
             total_count = queryset.count()
             logger.debug(f"[PRODUITS] Nombre de produits homologués trouvés: {total_count}")
@@ -1338,6 +1434,9 @@ class ProduitViewSet(viewsets.ModelViewSet):
         except ValueError:
             size, offset = 20, 0
         res = search_products(q, size=size, offset=offset)
+        if res is None:
+            # Elasticsearch n'est pas disponible, retourner une réponse vide
+            return Response({'results': [], 'total': 0, 'error': 'Elasticsearch non disponible'})
         hits = res.get('hits', {})
         total = hits.get('total', {}).get('value', 0)
         items = [h.get('_source') for h in hits.get('hits', [])]
@@ -1350,6 +1449,9 @@ class ProduitViewSet(viewsets.ModelViewSet):
         if not prefix or len(prefix) < 1:
             return Response([])
         res = suggest_products(prefix, size=int(request.query_params.get('size', '5')))
+        if res is None:
+            # Elasticsearch n'est pas disponible, retourner une liste vide
+            return Response([])
         suggests = res.get('suggest', {}).get('product-suggest', [])
         options = []
         for bucket in suggests:

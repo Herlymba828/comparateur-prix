@@ -47,14 +47,29 @@ class Command(BaseCommand):
             default=3,
             help='Nombre de prix à créer par produit (défaut: 3)'
         )
+        parser.add_argument(
+            '--skip-elasticsearch',
+            action='store_true',
+            help='Désactiver l\'indexation Elasticsearch pendant le seed (utile si ES n\'est pas disponible)'
+        )
 
     def handle(self, *args, **options):
         nb_produits = options['produits']
         nb_magasins = options['magasins']
         clear = options['clear']
         prix_par_produit = options['prix_par_produit']
+        skip_elasticsearch = options.get('skip_elasticsearch', False)
         
-        self.stdout.write(self.style.SUCCESS('🌱 Démarrage du seed de données...'))
+        # Désactiver temporairement l'indexation Elasticsearch si demandé
+        original_env_value = None
+        if skip_elasticsearch:
+            import os
+            original_env_value = os.environ.get('SEARCH_INDEX_ENABLED')
+            os.environ['SEARCH_INDEX_ENABLED'] = 'false'
+            self.stdout.write(self.style.WARNING('⚠️  Indexation Elasticsearch désactivée pendant le seed'))
+        
+        try:
+            self.stdout.write(self.style.SUCCESS('🌱 Démarrage du seed de données...'))
         
         if clear:
             self.stdout.write(self.style.WARNING('⚠️  Suppression des données existantes...'))
@@ -92,13 +107,22 @@ class Command(BaseCommand):
             prix_crees = self.create_prix(produits, magasins, prix_par_produit)
             self.stdout.write(self.style.SUCCESS(f'✓ {prix_crees} prix créés'))
         
-        self.stdout.write(self.style.SUCCESS('\n✅ Seed terminé avec succès!'))
-        self.stdout.write(self.style.SUCCESS(f'📊 Résumé:'))
-        self.stdout.write(self.style.SUCCESS(f'   - Catégories: {Categorie.objects.count()}'))
-        self.stdout.write(self.style.SUCCESS(f'   - Marques: {Marque.objects.count()}'))
-        self.stdout.write(self.style.SUCCESS(f'   - Magasins: {Magasin.objects.count()}'))
-        self.stdout.write(self.style.SUCCESS(f'   - Produits: {Produit.objects.count()}'))
-        self.stdout.write(self.style.SUCCESS(f'   - Prix: {Prix.objects.count()}'))
+            self.stdout.write(self.style.SUCCESS('\n✅ Seed terminé avec succès!'))
+            self.stdout.write(self.style.SUCCESS(f'📊 Résumé:'))
+            self.stdout.write(self.style.SUCCESS(f'   - Catégories: {Categorie.objects.count()}'))
+            self.stdout.write(self.style.SUCCESS(f'   - Marques: {Marque.objects.count()}'))
+            self.stdout.write(self.style.SUCCESS(f'   - Magasins: {Magasin.objects.count()}'))
+            self.stdout.write(self.style.SUCCESS(f'   - Produits: {Produit.objects.count()}'))
+            self.stdout.write(self.style.SUCCESS(f'   - Prix: {Prix.objects.count()}'))
+        finally:
+            # Restaurer la valeur originale de SEARCH_INDEX_ENABLED
+            if skip_elasticsearch:
+                import os
+                if original_env_value is not None:
+                    os.environ['SEARCH_INDEX_ENABLED'] = original_env_value
+                elif 'SEARCH_INDEX_ENABLED' in os.environ:
+                    del os.environ['SEARCH_INDEX_ENABLED']
+                self.stdout.write(self.style.SUCCESS('✓ Indexation Elasticsearch réactivée'))
     
     def create_categories(self):
         """Crée les catégories de base si elles n'existent pas"""

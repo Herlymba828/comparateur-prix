@@ -26,6 +26,147 @@
 - `GET /activate/<uid>/<token>/` - Page web d'activation (avec UID)
 - `GET /activate/<token>` - Page web d'activation (token seul)
 
+#### 📖 Guide d'Inscription Utilisateur
+
+Deux endpoints sont disponibles pour l'inscription (ils utilisent le même serializer et acceptent les mêmes données) :
+1. **`POST /api/utilisateurs/`** - Via ViewSet (recommandé pour intégration avec CRUD)
+2. **`POST /api/auth/register/`** - Via RegisterView (dédié à l'authentification)
+
+**Champs Requis :**
+- `username` (string) - Nom d'utilisateur unique
+- `email` (string) - Adresse email unique, format email valide
+- `password` (string) - Mot de passe, **minimum 8 caractères**
+- `password_confirmation` (string) - Confirmation du mot de passe, doit correspondre à `password`
+
+**Champs Optionnels :**
+- `first_name` (string) - Prénom
+- `last_name` (string) - Nom de famille
+- `type_utilisateur` (string) - Type d'utilisateur (`particulier`, `professionnel`, `administrateur`)
+- `telephone` (string) - Numéro de téléphone (format international recommandé, normalisé automatiquement)
+- `code_postal` (string) - Code postal
+- `ville` (string) - Ville
+- `date_naissance` (string) - Date de naissance (format ISO: `YYYY-MM-DD`)
+
+**Exemple de Requête :**
+```json
+{
+  "username": "john_doe",
+  "email": "john.doe@example.com",
+  "password": "motdepasse123",
+  "password_confirmation": "motdepasse123",
+  "first_name": "John",
+  "last_name": "Doe"
+}
+```
+
+**Réponse de Succès (201 Created) :**
+```json
+{
+  "user": {
+    "id": 1,
+    "uuid": "550e8400-e29b-41d4-a716-446655440000",
+    "username": "john_doe",
+    "email": "john.doe@example.com",
+    "est_verifie": false,
+    "points_fidelite": 0
+  },
+  "refresh": "eyJ0eXAiOiJKV1QiLCJhbGc...",
+  "access": "eyJ0eXAiOiJKV1QiLCJhbGc...",
+  "activation_pending": true
+}
+```
+
+**Erreurs Courantes :**
+- **400 Bad Request** : Mot de passe trop court (< 8 caractères), `password_confirmation` manquant, mots de passe ne correspondent pas, email/username déjà utilisé
+
+### Réinitialisation de mot de passe
+
+#### 1. Demander une réinitialisation
+
+**Endpoint** : `POST /api/auth/password/reset/`
+
+**Description** : Envoie un email avec un lien de réinitialisation de mot de passe.
+
+**Requête** :
+```json
+{
+  "email": "user@example.com"
+}
+```
+
+**Réponse (200 OK)** :
+```json
+{
+  "detail": "Si un compte existe pour cet email, un lien de réinitialisation a été envoyé."
+}
+```
+
+**Note** : La réponse est toujours 200 OK pour des raisons de sécurité (ne pas révéler si un compte existe).
+
+#### 2. Confirmer la réinitialisation
+
+**Endpoint** : `POST /api/auth/password/reset/confirm/<token>/`
+
+**Description** : Confirme la réinitialisation via le token reçu par email et définit le nouveau mot de passe.
+
+**Requête** :
+```json
+{
+  "nouveau_mot_de_passe": "nouveauMotDePasse123",
+  "confirmation_mot_de_passe": "nouveauMotDePasse123"
+}
+```
+
+**Réponse (200 OK)** :
+```json
+{
+  "detail": "Mot de passe réinitialisé avec succès."
+}
+```
+
+**Erreurs possibles** :
+- `400 Bad Request` : Token invalide ou expiré, ou mots de passe ne correspondent pas
+- `404 Not Found` : Utilisateur introuvable
+
+#### Endpoints alternatifs (compatibilité)
+
+Pour compatibilité avec l'ancienne API, ces endpoints sont également disponibles :
+- `POST /api/auth/mot-de-passe/demander/` (alias de `/api/auth/password/reset/`)
+- `POST /api/auth/mot-de-passe/confirmer/<token>/` (alias de `/api/auth/password/reset/confirm/<token>/`)
+
+#### Email de réinitialisation
+
+L'email envoyé contient un lien avec un token signé valide pendant 1 heure (3600 secondes).
+
+Le lien est construit automatiquement et pointe vers :
+```
+/api/auth/mot-de-passe/confirmer/<token>/
+```
+
+#### Sécurité
+
+1. **Pas de révélation d'existence** : La réponse est toujours 200 OK même si l'email n'existe pas
+2. **Token signé** : Les tokens sont signés avec `TimestampSigner` et expirent après 1 heure
+3. **Validation** : Le mot de passe doit faire au moins 8 caractères
+4. **Confirmation** : Les deux champs de mot de passe doivent correspondre
+
+#### Dépannage
+
+**Erreur 404 sur `/api/auth/password/reset/`** : Vérifier que les URLs sont correctement configurées dans `apps/utilisateurs/urls.py`.
+
+**Token invalide ou expiré** : Demander une nouvelle réinitialisation.
+
+**Email non reçu** :
+1. Vérifier la configuration email (SMTP) dans les settings
+2. Vérifier que Celery/Redis fonctionne (l'email est envoyé de manière asynchrone)
+3. Vérifier les logs Celery pour les erreurs d'envoi
+4. Vérifier le dossier spam
+
+### Connexion sociale (OAuth)
+- `POST /api/auth/google/` - Connexion via Google (id_token)
+- `POST /api/auth/facebook/` - Connexion via Facebook (access_token)
+- `POST /api/auth/apple/` - Connexion via Apple (id_token)
+
 ### Gestion des sessions
 - `GET /api/auth/sessions/` - Lister toutes les sessions actives
 - `POST /api/auth/sessions/revoke/` - Révoquer une session
@@ -42,7 +183,7 @@
 
 ### Base CRUD (ViewSet)
 - `GET /api/utilisateurs/` - Liste des utilisateurs
-- `POST /api/utilisateurs/` - Créer un utilisateur (📖 [Guide d'inscription](./API_INSCRIPTION.md))
+- `POST /api/utilisateurs/` - Créer un utilisateur (voir [Guide d'inscription](#-guide-dinscription-utilisateur) ci-dessous)
 - `GET /api/utilisateurs/{id}/` - Détails d'un utilisateur
 - `PUT /api/utilisateurs/{id}/` - Mettre à jour un utilisateur (complet)
 - `PATCH /api/utilisateurs/{id}/` - Mettre à jour un utilisateur (partiel)
@@ -99,6 +240,15 @@
 
 ### Actions personnalisées ProduitViewSet
 - `GET /api/produits/produits/populaires/` - Produits populaires
+- `GET /api/produits/produits/tous/` - Tous les produits (actifs + inactifs) [Public]
+  - **Description** : Retourne TOUS les produits de la base (actifs et inactifs)
+  - **Pagination** : ✅ Oui
+- `GET /api/produits/produits/defiscalises/` - Produits défiscalisés [Public]
+  - **Description** : Retourne tous les produits défiscalisés (catégories: Alimentaire, Médicament, Équipement médical)
+  - **Pagination** : ✅ Oui
+- `GET /api/produits/produits/homologues/` - Produits homologués [Public]
+  - **Description** : Retourne tous les produits homologués (correspondance avec HomologationProduit)
+  - **Pagination** : ✅ Oui
 - `GET /api/produits/produits/{id}/prix/` - Prix d'un produit
 - `GET /api/produits/produits/{id}/magasins/` - Magasins vendant le produit
 - `GET /api/produits/produits/{id}/comparaison/` - Comparaison de prix
@@ -121,7 +271,16 @@
 - `GET /api/produits/produits/{id}/evolution-prix/` - Évolution des prix
 - `GET /api/produits/produits/{id}/magasins-proches/` - Magasins proches
 - `POST /api/produits/produits/{id}/like/` - Liker un produit [Auth]
+  - **Description** : Ajoute un produit aux favoris de l'utilisateur connecté
+  - **Réponse 201** : `{"message": "Produit ajouté aux favoris", "liked": true, "produit_id": 123}`
+  - **Réponse 200** (déjà liké) : `{"message": "Produit déjà dans vos favoris", "liked": true, "produit_id": 123}`
+  - **Erreur 401** : Token JWT manquant ou invalide
 - `DELETE /api/produits/produits/{id}/like/` - Retirer le like d'un produit [Auth]
+  - **Description** : Retire un produit des favoris de l'utilisateur connecté
+  - **Réponse 200** : `{"message": "Produit retiré des favoris", "liked": false, "produit_id": 123}`
+- `GET /api/produits/produits/mes_likes/` - Liste des produits likés [Auth]
+  - **Description** : Retourne tous les produits likés par l'utilisateur connecté
+  - **Pagination** : ✅ Oui
 - `POST /api/produits/produits/{id}/favoris/` - Ajouter aux favoris [Auth]
 - `GET /api/produits/produits/{id}/favoris/` - Vérifier si favori [Auth]
 - `GET /api/produits/produits/favoris/` - Liste des favoris de l'utilisateur [Auth]
@@ -133,6 +292,10 @@
 - `PUT /api/produits/prix/{id}/` - Mettre à jour un prix
 - `PATCH /api/produits/prix/{id}/` - Mettre à jour partiellement un prix
 - `DELETE /api/produits/prix/{id}/` - Supprimer un prix
+- `GET /api/produits/prix/comparaison_produit/?produit={id}` - Comparaison de prix par produit [Public]
+  - **Description** : Compare les prix d'un produit entre différents magasins
+  - **Paramètres** : `produit` ou `produit_id` (requis)
+  - **Réponse** : Produit, statistiques (prix_min, prix_max, prix_moyen, nombre_magasins, promotions), prix_par_magasin
 
 ### Alertes Prix (ViewSet)
 - `GET /api/produits/alertes-prix/` - Liste des alertes prix
@@ -311,9 +474,18 @@
 
 ### Routes fonctionnelles
 - `GET /api/recommandations/statut-modeles/` - Statut des modèles ML
-- `GET /api/recommandations/pour_moi/` - Recommandations pour l'utilisateur connecté
-- `GET /api/recommandations/populaires/` - Recommandations populaires
-- `GET /api/recommandations/pour_produit/` - Recommandations pour un produit
+- `GET /api/recommandations/pour_moi/` - Recommandations pour l'utilisateur connecté [Auth]
+  - **Description** : Retourne tous les produits likés par l'utilisateur connecté
+  - **Query params** : `n_recommandations` (optionnel, défaut: 10)
+  - **Alias** : `/api/recommandations/reco/pour-vous/`, `/api/reco/pour-vous/`
+- `GET /api/recommandations/populaires/` - Recommandations populaires [Public]
+  - **Description** : Produits populaires (cache 15 minutes)
+  - **Query params** : `n_recommandations` (optionnel, défaut: 10)
+  - **Alias** : `/api/recommandations/reco/tendances/`, `/api/reco/tendances/`
+- `GET /api/recommandations/pour_produit/?produit_id={id}` - Recommandations pour un produit [Public]
+  - **Description** : Recommandations basées sur un produit
+  - **Query params** : `produit_id` (requis), `n_recommandations` (optionnel, défaut: 10)
+  - **Alias** : `/api/reco/produits/{produit_id}/similaires/`
 
 ### Routes legacy et alias
 - `GET /api/recommandations/recommandations/utilisateur/` - Recommandations utilisateur (legacy)
@@ -449,6 +621,61 @@
 
 ## 📝 Notes importantes
 
+### Authentification JWT
+
+Tous les endpoints nécessitant une authentification utilisent **JWT (JSON Web Token)**.
+
+**Format du Header :**
+```
+Authorization: Bearer <votre_token_jwt>
+```
+
+**Obtenir un Token :**
+```
+POST /api/auth/token/
+Body: {
+  "username": "votre_username",
+  "password": "votre_password"
+}
+Response: {
+  "access": "eyJ0eXAiOiJKV1QiLCJhbGc...",
+  "refresh": "eyJ0eXAiOiJKV1QiLCJhbGc..."
+}
+```
+
+**Rafraîchir un Token :**
+```
+POST /api/auth/token/refresh/
+Body: {
+  "refresh": "<votre_refresh_token>"
+}
+Response: {
+  "access": "nouveau_access_token",
+  "refresh": "nouveau_refresh_token"  // Si rotation activée
+}
+```
+
+**⚠️ Important :** Avec la rotation des tokens activée, le frontend DOIT sauvegarder le nouveau refresh token retourné.
+
+### Codes d'Erreur
+
+**401 Unauthorized :**
+- **Cause** : Token JWT manquant, invalide ou expiré
+- **Message** : "Authentification requise. Veuillez fournir un token JWT valide dans le header Authorization."
+- **Solution** : Rafraîchir le token avec `/api/auth/token/refresh/`
+
+**403 Forbidden :**
+- **Cause** : Permissions insuffisantes
+- **Message** : "Vous n'avez pas la permission d'effectuer cette action."
+
+**400 Bad Request :**
+- **Cause** : Paramètres manquants ou invalides
+- **Message** : Détails de l'erreur de validation
+
+**404 Not Found :**
+- **Cause** : Ressource non trouvée
+- **Message** : "Ressource non trouvée"
+
 ### Authentification
 - La plupart des endpoints nécessitent une authentification (JWT ou Session)
 - Les endpoints publics sont généralement en lecture seule (`GET`)
@@ -469,9 +696,24 @@
 - Utiliser les paramètres de query pour filtrer les résultats
 - Exemple: `/api/produits/produits/?search=chocolat&categorie=1`
 
+**Filtres disponibles sur `/api/produits/produits/` :**
+- `?est_defiscalise=true` - Produits défiscalisés
+- `?est_homologue=true` - Produits homologués
+- `?prix_min=1000&prix_max=5000` - Filtre par prix (utilise `prix_moyen_agg`)
+- `?categorie={id}&marque={id}` - Filtre par catégorie et/ou marque
+- `?search=nom_produit` - Recherche textuelle
+- `?ordering=prix_moyen_agg` - Tri par prix moyen
+
 ### Alias et Routes Legacy
 - Certains endpoints ont des alias pour la compatibilité avec le frontend
 - Les routes legacy sont maintenues pour la rétrocompatibilité mais peuvent être dépréciées
+
+### Notes Importantes
+1. **Sécurité** : Tous les endpoints de likes nécessitent une authentification JWT valide
+2. **Logs** : Toutes les tentatives d'accès non authentifiées sont loggées
+3. **Pagination** : La plupart des endpoints de liste supportent la pagination
+4. **Cache** : Les endpoints publics de recommandations sont mis en cache (15 minutes)
+5. **Unification DGCCRF** : Les produits scrappés du site DGCCRF sont automatiquement unifiés dans la table Produit principale
 
 ---
 

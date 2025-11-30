@@ -38,8 +38,9 @@ class MarqueFilter(django_filters.FilterSet):
 class ProduitFilter(django_filters.FilterSet):
     nom = django_filters.CharFilter(lookup_expr='icontains')
     code_barre = django_filters.CharFilter(lookup_expr='exact')
-    categorie = django_filters.ModelChoiceFilter(queryset=Categorie.objects.all())
-    marque = django_filters.ModelChoiceFilter(queryset=Marque.objects.all())
+    # Utiliser NumberFilter pour accepter les IDs et gérer les valeurs invalides gracieusement
+    categorie = django_filters.NumberFilter(field_name='categorie_id', method='filter_categorie')
+    marque = django_filters.NumberFilter(field_name='marque_id', method='filter_marque')
     # Filtres de prix utilisant les annotations du queryset
     prix_min = django_filters.NumberFilter(method='filter_prix_min')
     prix_max = django_filters.NumberFilter(method='filter_prix_max')
@@ -59,6 +60,39 @@ class ProduitFilter(django_filters.FilterSet):
     class Meta:
         model = Produit
         fields = ['nom', 'code_barre', 'categorie', 'marque', 'unite_mesure']
+    
+    def filter_categorie(self, queryset, name, value):
+        """Filtre par catégorie en vérifiant que l'ID existe"""
+        if value is not None:
+            try:
+                # Convertir en entier si c'est une chaîne
+                categorie_id = int(value) if isinstance(value, str) else value
+                # Vérifier que la catégorie existe
+                if Categorie.objects.filter(id=categorie_id).exists():
+                    return queryset.filter(categorie_id=categorie_id)
+                # Si la catégorie n'existe pas, ignorer le filtre (ne pas lever d'erreur)
+                # Cela permet au frontend de continuer à fonctionner même avec des IDs invalides
+                return queryset
+            except (ValueError, TypeError):
+                # Si la valeur n'est pas un nombre valide, ignorer le filtre
+                return queryset
+        return queryset
+    
+    def filter_marque(self, queryset, name, value):
+        """Filtre par marque en vérifiant que l'ID existe"""
+        if value is not None:
+            try:
+                # Convertir en entier si c'est une chaîne
+                marque_id = int(value) if isinstance(value, str) else value
+                # Vérifier que la marque existe
+                if Marque.objects.filter(id=marque_id).exists():
+                    return queryset.filter(marque_id=marque_id)
+                # Si la marque n'existe pas, ignorer le filtre (ne pas lever d'erreur)
+                return queryset
+            except (ValueError, TypeError):
+                # Si la valeur n'est pas un nombre valide, ignorer le filtre
+                return queryset
+        return queryset
     
     def filter_prix_min(self, queryset, name, value):
         """Filtre par prix minimum en utilisant l'annotation prix_moyen_agg"""

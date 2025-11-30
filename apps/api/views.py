@@ -1,6 +1,7 @@
 from django.http import JsonResponse
 from django.db.models import Min, Q, Count
 from django.utils.dateparse import parse_datetime, parse_date
+from django.core.cache import cache
 from datetime import datetime, time
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -13,6 +14,7 @@ from apps.magasins.models import Magasin
 from apps.produits.views import StatistiquesPrixViewSet
 from .models import SearchEvent
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 from .serializers import (
@@ -52,6 +54,22 @@ def search_produits(request):
     page = int(request.GET.get("page", 1))
     page_size = int(request.GET.get("page_size", 20))
 
+    # Générer la clé de cache basée sur les paramètres
+    params = {
+        'q': q,
+        'categorie': categorie,
+        'marque': marque,
+        'page': page,
+        'page_size': page_size,
+    }
+    cache_key = f"search_produits:{hashlib.md5(json.dumps(params, sort_keys=True).encode()).hexdigest()}"
+    
+    # Vérifier le cache
+    cached = cache.get(cache_key)
+    if cached:
+        logger.debug(f"Cache hit pour search_produits: {cache_key[:50]}")
+        return Response(cached, status=HTTP_200_OK)
+
     produits = Produit.objects.select_related("categorie", "marque").all()
     if q:
         produits = produits.filter(
@@ -87,6 +105,12 @@ def search_produits(request):
 
     data = {"count": total, "results": ProductSearchResultSerializer(items, many=True).data}
 
+    # Mettre en cache avec TTL adaptatif
+    # TTL plus long pour les recherches avec filtres (15 min) vs recherches simples (5 min)
+    ttl = 900 if (categorie or marque) else 300
+    cache.set(cache_key, data, ttl)
+    logger.debug(f"Cache miss pour search_produits, mis en cache avec TTL {ttl}s")
+
     # Journaliser la recherche (un événement par requête)
     try:
         if q:
@@ -113,13 +137,29 @@ def autocomplete_produits(request):
     q = (request.GET.get("q") or "").strip()
     if not q:
         return Response({"results": []}, status=HTTP_200_OK)
+    
+    # Cache key simple basé sur la requête (normalisée en minuscules)
+    cache_key = f"autocomplete:{q.lower()}"
+    
+    # Vérifier le cache
+    cached = cache.get(cache_key)
+    if cached:
+        logger.debug(f"Cache hit pour autocomplete: {q}")
+        return Response(cached, status=HTTP_200_OK)
+    
     qs = (
         Produit.objects.filter(nom__icontains=q)
         .order_by("nom")
         .values("id", "nom")[:10]
     )
     results = [{"id": row["id"], "label": row["nom"]} for row in qs]
-    return Response({"results": AutocompleteResultSerializer(results, many=True).data}, status=HTTP_200_OK)
+    data = {"results": AutocompleteResultSerializer(results, many=True).data}
+    
+    # Mettre en cache avec TTL court (2 minutes) car très fréquent
+    cache.set(cache_key, data, 120)
+    logger.debug(f"Cache miss pour autocomplete, mis en cache: {q}")
+    
+    return Response(data, status=HTTP_200_OK)
 
 
 @api_view(["GET"])
@@ -140,6 +180,23 @@ def homologations_stats(request):
     localisation = request.GET.get("localisation")
     ville = request.GET.get("ville")
     ville_id = request.GET.get("ville_id")
+
+    # Générer la clé de cache basée sur les filtres
+    filters = {
+        'produit_id': produit_id,
+        'date_from': date_from,
+        'date_to': date_to,
+        'localisation': localisation,
+        'ville': ville,
+        'ville_id': ville_id,
+    }
+    cache_key = f"homologations_stats:{hashlib.md5(json.dumps(filters, sort_keys=True).encode()).hexdigest()}"
+    
+    # Vérifier le cache
+    cached = cache.get(cache_key)
+    if cached:
+        logger.debug(f"Cache hit pour homologations_stats: {cache_key[:50]}")
+        return Response(cached, status=HTTP_200_OK)
 
     prix_qs = Prix.objects.all()
 
@@ -207,6 +264,11 @@ def homologations_stats(request):
         },
         'ok': True,
     }
+    
+    # Mettre en cache avec TTL de 30 minutes (calculs coûteux)
+    cache.set(cache_key, payload, 1800)
+    logger.debug(f"Cache miss pour homologations_stats, mis en cache avec TTL 1800s")
+    
     return Response(payload, status=HTTP_200_OK)
 
 

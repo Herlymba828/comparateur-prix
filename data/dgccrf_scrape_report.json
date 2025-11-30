@@ -4,12 +4,12 @@
   "source_counts": {
     "liste_produit": 60
   },
-  "duration_sec": 5.065,
+  "duration_sec": 3.045,
   "saved_products": 0,
   "saved_prices": 0,
-  "timestamp": "2025-11-18T00:36:51.866262+00:00",
+  "timestamp": "2025-11-28T09:29:14.561497+00:00",
   "config": {
-    "delay_sec": 2.0,
+    "delay_sec": 1.0,
     "timeout_sec": 30.0,
     "retries": 3,
     "backoff": 1.5,

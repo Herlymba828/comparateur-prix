@@ -1,11 +1,9 @@
 from rest_framework import status, viewsets, permissions, serializers
-from rest_framework.throttling import AnonRateThrottle
-from .throttling import SafeAnonRateThrottle, SafeScopedRateThrottle
+from .throttling import SafeAnonRateThrottle
 from rest_framework.views import APIView
 
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django.core.mail import send_mail
 from django.conf import settings
 from django.http import HttpResponse, HttpResponseBadRequest
 from django.views.decorators.csrf import csrf_exempt
@@ -27,23 +25,25 @@ except ImportError:
 from django.utils.translation import gettext_lazy as _
 from django.db import transaction
 from django.utils import timezone
-from datetime import timedelta
-from django.core.cache import cache
-import secrets
-from django.utils.decorators import method_decorator
-from django.views.decorators.cache import cache_page
-from django.views.decorators.vary import vary_on_cookie
 from decimal import Decimal
 import io
 import base64
 import qrcode
 from django.utils.dateparse import parse_datetime
 import ipaddress
+import logging
+import sys
 
 from .models import Utilisateur, ProfilUtilisateur, Abonnement, HistoriqueConnexion, HistoriqueRemises
 from .utils import generer_token_activation, verifier_token_activation, generer_token_reset, verifier_token_reset
-from .utils import make_activation_uid_token, check_activation_uid_token, build_activation_link_uid
-from .tasks import send_activation_email, send_reset_email, send_login_otp_email, send_activation_email_uid, send_activation_code_email
+from .utils import make_activation_uid_token, check_activation_uid_token
+from .tasks import (
+    send_activation_email, 
+    send_reset_email, 
+    send_login_otp_email, 
+    send_activation_email_uid,
+    send_activation_code_email
+)
 from .serializers import (
     InscriptionSerializer, ConnexionSerializer, UtilisateurSerializer,
     MiseAJourUtilisateurSerializer, ProfilUtilisateurSerializer,
@@ -54,10 +54,11 @@ from .serializers import (
 )
 from apps.utilisateurs.permissions import IsProprietaireProfil, IsAdminOrReadOnly, IsAdminOrModerator, IsSuperUser
 from django.contrib.auth.models import Group
-from django.contrib.auth import authenticate, login
 from django.contrib.auth import login as django_login
 from django_otp.plugins.otp_totp.models import TOTPDevice
 from django_otp import devices_for_user, login as otp_login
+
+logger = logging.getLogger(__name__)
 
 class UtilisateurViewSet(viewsets.ModelViewSet):
     """ViewSet pour la gestion des utilisateurs avec système de fidélité"""
@@ -107,12 +108,8 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
     
     def create(self, request, *args, **kwargs):
         """Créer un nouvel utilisateur avec gestion d'erreurs robuste"""
-        import logging
-        import sys
         from django.db import connection, DatabaseError, OperationalError
         from requests.exceptions import ConnectionError as RequestsConnectionError
-        
-        logger = logging.getLogger(__name__)
         
         # Log de début pour confirmer que la requête arrive
         print(f"[INFO] POST /api/utilisateurs/ - Début création utilisateur", file=sys.stdout, flush=True)
@@ -1023,8 +1020,6 @@ class LoginView(APIView):
 
 from rest_framework.decorators import api_view, permission_classes  # noqa: E402
 from django.contrib.sessions.models import Session  # noqa: E402
-from django.utils import timezone  # noqa: E402
-from django.http import HttpResponse, HttpResponseBadRequest  # noqa: E402
 try:
     from rest_framework_simplejwt.tokens import OutstandingToken, BlacklistedToken  # noqa: E402
 except Exception:

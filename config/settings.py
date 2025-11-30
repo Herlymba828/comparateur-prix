@@ -282,6 +282,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'social_django.middleware.SocialAuthExceptionMiddleware',
     'django_otp.middleware.OTPMiddleware',
+    'apps.utilisateurs.middleware.AuthErrorEnhancementMiddleware',  # Améliore les réponses 401
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'config.middleware.JSONExceptionMiddleware',  # Doit être en dernier pour intercepter toutes les exceptions
@@ -408,31 +409,59 @@ else:
                 )
             
             # Configuration manuelle pour la production (fallback)
-            # Détecter si on est en local (localhost) pour désactiver SSL
-            db_host = os.getenv('POSTGRES_HOST', 'localhost')
-            is_local = db_host in ('localhost', '127.0.0.1')
+            # En production Railway, NE JAMAIS utiliser localhost comme fallback
+            if is_railway_env:
+                # Sur Railway, si DATABASE_URL n'est pas défini, c'est une erreur de configuration
+                logger.error(
+                    "❌ ERREUR CRITIQUE: DATABASE_URL et DATABASE_PUBLIC_URL ne sont pas définies sur Railway.\n"
+                    "L'application ne peut pas fonctionner sans connexion à la base de données.\n"
+                    "Actions requises:\n"
+                    "  1. Allez dans Railway Dashboard → votre service Django\n"
+                    "  2. Cliquez sur 'Variables'\n"
+                    "  3. Vérifiez que le service PostgreSQL est bien lié\n"
+                    "  4. Si absent, ajoutez DATABASE_URL manuellement depuis le service PostgreSQL\n"
+                    "  5. Redémarrez le service Django"
+                )
+                # Ne pas utiliser localhost en production Railway - cela causera des erreurs
+                # Utiliser des valeurs vides pour forcer l'erreur explicite
+                db_host = None
+                db_name = None
+            else:
+                # En développement local uniquement, utiliser localhost comme fallback
+                db_host = os.getenv('POSTGRES_HOST', 'localhost')
+                db_name = os.getenv('POSTGRES_DB', 'comparateur_prix')
+            
+            is_local = db_host in ('localhost', '127.0.0.1', None) if db_host else True
             ssl_require_env = os.getenv('POSTGRES_SSL_REQUIRE', 'False' if is_local else 'True')
             
-            if is_railway_env and is_local:
-                logger.warning(
-                    "⚠️  Utilisation de localhost comme HOST PostgreSQL en production Railway.\n"
-                    "Cela ne fonctionnera pas. Veuillez définir DATABASE_URL ou DATABASE_PUBLIC_URL."
-                )
-            
-            DATABASES = {
-                'default': {
-                    'ENGINE': 'django.db.backends.postgresql',
-                    'NAME': os.getenv('POSTGRES_DB', 'comparateur_prix'),
-                    'USER': os.getenv('POSTGRES_USER', 'postgres'),
-                    'PASSWORD': os.getenv('POSTGRES_PASSWORD', ''),
-                    'HOST': db_host,
-                    'PORT': os.getenv('POSTGRES_PORT', '5432'),
-                    'OPTIONS': {
-                        'sslmode': 'require' if ssl_require_env.lower() in ('1', 'true', 'yes', 'y') else 'disable',
-                        'options': '-c client_encoding=UTF8',
-                    },
+            if is_railway_env and (is_local or db_host is None):
+                # Ne pas créer de configuration avec localhost en production Railway
+                # Laisser Django échouer avec une erreur explicite
+                DATABASES = {
+                    'default': {
+                        'ENGINE': 'django.db.backends.postgresql',
+                        'NAME': '',  # Vide pour forcer l'erreur
+                        'USER': '',
+                        'PASSWORD': '',
+                        'HOST': '',
+                        'PORT': '',
+                    }
                 }
-            }
+            else:
+                DATABASES = {
+                    'default': {
+                        'ENGINE': 'django.db.backends.postgresql',
+                        'NAME': db_name or os.getenv('POSTGRES_DB', 'comparateur_prix'),
+                        'USER': os.getenv('POSTGRES_USER', 'postgres'),
+                        'PASSWORD': os.getenv('POSTGRES_PASSWORD', ''),
+                        'HOST': db_host or 'localhost',
+                        'PORT': os.getenv('POSTGRES_PORT', '5432'),
+                        'OPTIONS': {
+                            'sslmode': 'require' if ssl_require_env.lower() in ('1', 'true', 'yes', 'y') else 'disable',
+                            'options': '-c client_encoding=UTF8',
+                        },
+                    }
+                }
     except ImportError:
         # Fallback: utiliser les variables d'environnement individuelles
         DB_ENGINE = os.getenv('DB_ENGINE', 'postgresql').lower()
@@ -612,12 +641,16 @@ _redis_broker_url = (
     os.getenv('REDISCLOUD_URL')
 )
 # Si aucune URL Redis n'est disponible, utiliser un fallback localhost uniquement en développement local
-if not _redis_broker_url and DEBUG:
+# Ne JAMAIS utiliser localhost en production Railway
+is_railway_env = bool(os.getenv('RAILWAY_ENVIRONMENT') or os.getenv('RAILWAY_PROJECT_ID'))
+if not _redis_broker_url and DEBUG and not is_railway_env:
     _redis_broker_url = 'redis://localhost:6379/0'
 elif not _redis_broker_url:
     # En production, ne pas définir de fallback - Celery utilisera la configuration par défaut
     # qui peut être configurée ailleurs ou désactivée
     _redis_broker_url = None
+    if is_railway_env:
+        logger.warning("⚠️  REDIS_URL non défini sur Railway. Celery ne fonctionnera pas correctement.")
 
 CELERY_BROKER_URL = _redis_broker_url
 CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', _redis_broker_url)
@@ -700,6 +733,8 @@ REST_FRAMEWORK = {
         'login': os.getenv('DRF_THROTTLE_LOGIN', '10/min'),
     },
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    # Exception handler personnalisé pour améliorer les messages d'erreur 401
+    'EXCEPTION_HANDLER': 'apps.utilisateurs.exceptions.custom_exception_handler',
     # Renderers
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
@@ -849,11 +884,18 @@ GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY')
 # Cache (Redis si disponible en prod, sinon cache local mémoire en dev)
 # Vérifier si Redis est disponible avant de l'utiliser
 # Priorité: REDIS_PUBLIC_URL (Railway public) > REDIS_URL (Railway internal) > REDISCLOUD_URL
+# Ne JAMAIS utiliser localhost en production Railway
+_railway_env_check = bool(os.getenv('RAILWAY_ENVIRONMENT') or os.getenv('RAILWAY_PROJECT_ID'))
 REDIS_URL = (
     os.getenv('REDIS_PUBLIC_URL') or 
     os.getenv('REDIS_URL') or 
     os.getenv('REDISCLOUD_URL')
 )
+# En production Railway, ne pas utiliser de fallback localhost
+if not REDIS_URL and _railway_env_check:
+    import logging
+    _logger = logging.getLogger(__name__)
+    _logger.warning("⚠️  REDIS_URL non défini sur Railway. Le cache Redis ne sera pas disponible.")
 # Permet d'utiliser une base Redis distincte pour le cache Django si souhaité
 REDIS_CACHE_URL = os.getenv('REDIS_CACHE_URL') or REDIS_URL
 

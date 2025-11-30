@@ -20,6 +20,8 @@ def get_es_client() -> Elasticsearch:
             "scheme": ES_SCHEME,
         }],
         "verify_certs": ES_VERIFY,
+        "request_timeout": 5,  # Timeout par défaut de 5 secondes
+        "max_retries": 1,  # Ne pas réessayer si la connexion échoue
     }
     if ES_USER and ES_PASS:
         kwargs["basic_auth"] = (ES_USER, ES_PASS)
@@ -82,70 +84,107 @@ def make_product_doc(produit):
 
 
 def ensure_indices():
-    es = get_es_client()
-    if not es.indices.exists(index=INDEX_PRODUCTS):
-        es.indices.create(index=INDEX_PRODUCTS, mappings=PRODUCT_MAPPING["mappings"], settings=PRODUCT_MAPPING["settings"]) 
-    if not es.indices.exists(index=INDEX_SUGGEST):
-        es.indices.create(index=INDEX_SUGGEST, mappings={
-            "properties": {
-                "id": {"type": "keyword"},
-                "suggest": {"type": "completion"}
-            }
-        })
+    """Crée les index Elasticsearch s'ils n'existent pas. Ne bloque pas si ES n'est pas disponible."""
+    try:
+        es = get_es_client()
+        if not es.indices.exists(index=INDEX_PRODUCTS):
+            es.indices.create(index=INDEX_PRODUCTS, mappings=PRODUCT_MAPPING["mappings"], settings=PRODUCT_MAPPING["settings"]) 
+        if not es.indices.exists(index=INDEX_SUGGEST):
+            es.indices.create(index=INDEX_SUGGEST, mappings={
+                "properties": {
+                    "id": {"type": "keyword"},
+                    "suggest": {"type": "completion"}
+                }
+            })
+    except Exception as e:
+        # Ne pas bloquer si Elasticsearch n'est pas disponible
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.debug(f"Impossible de créer les index Elasticsearch: {type(e).__name__} - {str(e)}")
 
 
 def index_product(produit):
     enabled = os.getenv('SEARCH_INDEX_ENABLED', 'true').lower() in ('1','true','yes','y')
     if not enabled:
         return
-    es = get_es_client()
-    doc = make_product_doc(produit)
-    es.index(index=INDEX_PRODUCTS, id=produit.id, document=doc, refresh="wait_for")
-    # also index suggest-only doc
-    es.index(index=INDEX_SUGGEST, id=produit.id, document={"id": str(produit.id), "suggest": doc["suggest"]}, refresh="wait_for")
+    try:
+        es = get_es_client()
+        doc = make_product_doc(produit)
+        # Utiliser refresh=False pour éviter de bloquer si ES n'est pas disponible
+        es.index(index=INDEX_PRODUCTS, id=produit.id, document=doc, refresh=False, request_timeout=2)
+        # also index suggest-only doc
+        es.index(index=INDEX_SUGGEST, id=produit.id, document={"id": str(produit.id), "suggest": doc["suggest"]}, refresh=False, request_timeout=2)
+    except Exception as e:
+        # Ne pas propager l'erreur si Elasticsearch n'est pas disponible
+        # Cela permet de continuer à créer des produits même sans ES
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.debug(f"Impossible d'indexer le produit {produit.id} dans Elasticsearch: {type(e).__name__} - {str(e)}")
+        # Ne pas re-raise l'erreur pour ne pas bloquer la création de produit
 
 
 def delete_product(product_id):
+    """Supprime un produit des index Elasticsearch. Ne bloque pas si ES n'est pas disponible."""
     enabled = os.getenv('SEARCH_INDEX_ENABLED', 'true').lower() in ('1','true','yes','y')
     if not enabled:
         return
-    es = get_es_client()
     try:
-        es.delete(index=INDEX_PRODUCTS, id=product_id, refresh="wait_for")
-    except Exception:
-        pass
+        es = get_es_client()
+        # Utiliser refresh=False pour éviter de bloquer
+        es.delete(index=INDEX_PRODUCTS, id=product_id, refresh=False, request_timeout=2)
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.debug(f"Impossible de supprimer le produit {product_id} de l'index produits: {type(e).__name__} - {str(e)}")
     try:
-        es.delete(index=INDEX_SUGGEST, id=product_id, refresh="wait_for")
-    except Exception:
-        pass
+        es = get_es_client()
+        es.delete(index=INDEX_SUGGEST, id=product_id, refresh=False, request_timeout=2)
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.debug(f"Impossible de supprimer le produit {product_id} de l'index suggest: {type(e).__name__} - {str(e)}")
 
 
 def search_products(q: str, size: int = 20, offset: int = 0):
-    es = get_es_client()
-    body = {
-        "from": offset,
-        "size": size,
-        "query": {
-            "bool": {
-                "must": [
-                    {"multi_match": {"query": q, "fields": ["nom^3", "categorie_nom^1.5", "marque_nom^2"]}}
-                ],
-                "filter": [{"term": {"est_actif": True}}]
-            }
-        },
-        "highlight": {"fields": {"nom": {}}}
-    }
-    return es.search(index=INDEX_PRODUCTS, body=body)
+    """Recherche des produits dans Elasticsearch. Retourne None si ES n'est pas disponible."""
+    try:
+        es = get_es_client()
+        body = {
+            "from": offset,
+            "size": size,
+            "query": {
+                "bool": {
+                    "must": [
+                        {"multi_match": {"query": q, "fields": ["nom^3", "categorie_nom^1.5", "marque_nom^2"]}}
+                    ],
+                    "filter": [{"term": {"est_actif": True}}]
+                }
+            },
+            "highlight": {"fields": {"nom": {}}}
+        }
+        return es.search(index=INDEX_PRODUCTS, body=body, request_timeout=5)
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Impossible de rechercher dans Elasticsearch: {type(e).__name__} - {str(e)}")
+        return None
 
 
 def suggest_products(prefix: str, size: int = 5):
-    es = get_es_client()
-    body = {
-        "suggest": {
-            "product-suggest": {
-                "prefix": prefix,
-                "completion": {"field": "suggest", "size": size}
+    """Suggère des produits via Elasticsearch. Retourne None si ES n'est pas disponible."""
+    try:
+        es = get_es_client()
+        body = {
+            "suggest": {
+                "product-suggest": {
+                    "prefix": prefix,
+                    "completion": {"field": "suggest", "size": size}
+                }
             }
         }
-    }
-    return es.search(index=INDEX_SUGGEST, body=body)
+        return es.search(index=INDEX_SUGGEST, body=body, request_timeout=5)
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Impossible d'obtenir des suggestions depuis Elasticsearch: {type(e).__name__} - {str(e)}")
+        return None

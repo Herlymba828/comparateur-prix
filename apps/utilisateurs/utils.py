@@ -5,6 +5,7 @@ from decimal import Decimal
 import json
 from datetime import timedelta
 import os
+import secrets
 
 class CacheUtilisateur:
     """Classe utilitaire pour la gestion du cache des utilisateurs"""
@@ -269,3 +270,65 @@ def construire_lien_reset(token: str) -> str:
         return f"{base_front.rstrip('/')}/reinitialiser-mot-de-passe{sep}token={token}"
     api_base = os.getenv("BACKEND_URL", "http://localhost:8000")
     return f"{api_base.rstrip('/')}/api/utilisateurs/api/auth/mot-de-passe/confirmer/{token}/"
+
+# --- Code d'activation (6 chiffres) ---
+def generer_code_activation() -> str:
+    """Génère un code d'activation de 6 chiffres."""
+    try:
+        code = f"{secrets.randbelow(1000000):06d}"
+        return code
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Erreur lors de la génération du code d'activation: {type(e).__name__} - {str(e)}")
+        raise
+
+def stocker_code_activation(user_id: int, code: str, expiration_minutes: int = 15) -> None:
+    """Stocke le code d'activation dans le cache avec expiration."""
+    import logging
+    logger = logging.getLogger(__name__)
+    try:
+        cache_key = f"activation_code_{user_id}"
+        cache.set(cache_key, code, timeout=expiration_minutes * 60)
+        logger.debug(f"Code d'activation stocké pour user_id: {user_id}, expiration: {expiration_minutes} minutes")
+    except Exception as e:
+        error_msg = f"Erreur lors du stockage du code d'activation. User ID: {user_id}, Type: {type(e).__name__}, Message: {str(e)}"
+        logger.error(error_msg)
+        # Ne pas lever l'exception pour ne pas faire échouer l'inscription
+        # Le code sera quand même généré et envoyé par email
+
+def verifier_code_activation(user_id: int, code: str) -> bool:
+    """Vérifie si le code d'activation est valide pour l'utilisateur."""
+    import logging
+    logger = logging.getLogger(__name__)
+    try:
+        cache_key = f"activation_code_{user_id}"
+        stored_code = cache.get(cache_key)
+        if stored_code is None:
+            logger.warning(f"Code d'activation non trouvé ou expiré pour user_id: {user_id}")
+            return False
+        # Comparaison sécurisée pour éviter les attaques par timing
+        is_valid = secrets.compare_digest(str(stored_code), str(code))
+        if is_valid:
+            logger.info(f"Code d'activation vérifié avec succès pour user_id: {user_id}")
+        else:
+            logger.warning(f"Code d'activation invalide pour user_id: {user_id}")
+        return is_valid
+    except Exception as e:
+        error_msg = f"Erreur lors de la vérification du code d'activation. User ID: {user_id}, Type: {type(e).__name__}, Message: {str(e)}"
+        logger.error(error_msg)
+        # En cas d'erreur, considérer le code comme invalide pour la sécurité
+        return False
+
+def supprimer_code_activation(user_id: int) -> None:
+    """Supprime le code d'activation du cache."""
+    import logging
+    logger = logging.getLogger(__name__)
+    try:
+        cache_key = f"activation_code_{user_id}"
+        cache.delete(cache_key)
+        logger.debug(f"Code d'activation supprimé pour user_id: {user_id}")
+    except Exception as e:
+        # Ne pas lever l'exception, juste logger l'erreur
+        error_msg = f"Erreur lors de la suppression du code d'activation. User ID: {user_id}, Type: {type(e).__name__}, Message: {str(e)}"
+        logger.warning(error_msg)

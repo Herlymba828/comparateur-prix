@@ -1,18 +1,29 @@
-# Vérification de Conformité : API d'Inscription
+# ✅ Guide Complet : Vérifications
 
-Ce document vérifie que l'implémentation correspond à la documentation dans `API_INSCRIPTION.md`.
+Guide complet pour toutes les vérifications : conformité de l'API d'inscription et port Gunicorn sur Railway.
 
-## ✅ Conformité Générale : **CONFORME**
+## 📋 Table des matières
+
+- [Vérification de Conformité : API d'Inscription](#vérification-de-conformité-api-dinscription)
+- [Vérification du Port Gunicorn sur Railway](#vérification-du-port-gunicorn-sur-railway)
 
 ---
 
-## 1. Endpoints
+## 📝 Vérification de Conformité : API d'Inscription
 
-### Documentation
+Ce document vérifie que l'implémentation correspond à la documentation dans `ENDPOINTS_API.md`.
+
+### ✅ Conformité Générale : **CONFORME**
+
+---
+
+### 1. Endpoints
+
+#### Documentation
 - `POST /api/utilisateurs/` - Via ViewSet
 - `POST /api/auth/register/` - Via RegisterView
 
-### Implémentation
+#### Implémentation
 - ✅ `POST /api/utilisateurs/` - `UtilisateurViewSet.create()` (ligne 108)
 - ✅ `POST /api/auth/register/` - `RegisterView.post()` (ligne 662)
 - ✅ Les deux utilisent `InscriptionSerializer`
@@ -21,9 +32,9 @@ Ce document vérifie que l'implémentation correspond à la documentation dans `
 
 ---
 
-## 2. Champs Requis
+### 2. Champs Requis
 
-### Documentation
+#### Documentation
 | Champ | Validation |
 |-------|------------|
 | `username` | Requis, unique |
@@ -31,7 +42,7 @@ Ce document vérifie que l'implémentation correspond à la documentation dans `
 | `password` | Requis, minimum 8 caractères |
 | `password_confirmation` | Requis, doit correspondre à `password` |
 
-### Implémentation
+#### Implémentation
 - ✅ `username` : `required=True` dans `extra_kwargs` (ligne 21)
 - ✅ `email` : `required=True` dans `extra_kwargs` (ligne 20)
 - ✅ `password` : `min_length=8` (ligne 9)
@@ -41,21 +52,21 @@ Ce document vérifie que l'implémentation correspond à la documentation dans `
 
 ---
 
-## 3. Champs Optionnels
+### 3. Champs Optionnels
 
-### Documentation
+#### Documentation
 - `first_name`, `last_name`, `type_utilisateur`, `telephone`, `code_postal`, `ville`, `date_naissance`
 
-### Implémentation
+#### Implémentation
 - ✅ Tous présents dans `fields` (lignes 16-17)
 
 **Statut : CONFORME**
 
 ---
 
-## 4. Validations
+### 4. Validations
 
-### 4.1 Username Unique
+#### 4.1 Username Unique
 
 **Documentation :**
 - Message : "Un utilisateur avec ce nom d'utilisateur existe déjà."
@@ -68,7 +79,7 @@ Ce document vérifie que l'implémentation correspond à la documentation dans `
 
 ---
 
-### 4.2 Email Unique
+#### 4.2 Email Unique
 
 **Documentation :**
 - Message : "Un utilisateur avec cet email existe déjà."
@@ -82,7 +93,7 @@ Ce document vérifie que l'implémentation correspond à la documentation dans `
 
 ---
 
-### 4.3 Password Minimum Length
+#### 4.3 Password Minimum Length
 
 **Documentation :**
 - Message : "Assurez-vous que ce champ comporte au moins 8 caractères."
@@ -97,7 +108,7 @@ Ce document vérifie que l'implémentation correspond à la documentation dans `
 
 ---
 
-### 4.4 Password Confirmation
+#### 4.4 Password Confirmation
 
 **Documentation :**
 - Message si manquant : "Ce champ est obligatoire."
@@ -115,7 +126,7 @@ Ce document vérifie que l'implémentation correspond à la documentation dans `
 
 ---
 
-### 4.5 Champs Requis Manquants
+#### 4.5 Champs Requis Manquants
 
 **Documentation :**
 - Message : "Ce champ est obligatoire."
@@ -129,9 +140,9 @@ Ce document vérifie que l'implémentation correspond à la documentation dans `
 
 ---
 
-## 5. Réponse de Succès
+### 5. Réponse de Succès
 
-### Documentation
+#### Documentation
 ```json
 {
   "user": { ... },
@@ -141,15 +152,15 @@ Ce document vérifie que l'implémentation correspond à la documentation dans `
 }
 ```
 
-### Implémentation
+#### Implémentation
 
-#### UtilisateurViewSet.create() (ligne 197-233)
+**UtilisateurViewSet.create() (ligne 197-233)**
 - ✅ Retourne `UtilisateurSerializer(user).data` dans `response_data`
 - ✅ Ajoute `refresh` et `access` si JWT activé (ligne 203-211)
 - ✅ Ajoute `activation_pending` si `est_verifie=False` (ligne 214-215)
 - ✅ Status : `HTTP_201_CREATED` (ligne 233)
 
-#### RegisterView.post() (ligne 674-689)
+**RegisterView.post() (ligne 674-689)**
 - ✅ Retourne `UtilisateurSerializer(user).data` dans `user_payload`
 - ✅ Ajoute `refresh` et `access` si JWT activé (ligne 676-681)
 - ✅ Ajoute `activation_pending` si `est_verifie=False` (ligne 687-688)
@@ -159,13 +170,13 @@ Ce document vérifie que l'implémentation correspond à la documentation dans `
 
 ---
 
-## 6. Structure de la Réponse User
+### 6. Structure de la Réponse User
 
-### Documentation
+#### Documentation
 Les champs documentés incluent :
 - `id`, `uuid`, `username`, `email`, `first_name`, `last_name`, `type_utilisateur`, `telephone`, `date_naissance`, `code_postal`, `ville`, `date_creation`, `derniere_connexion`, `est_verifie`, `points_fidelite`, `niveau_fidelite`, `total_achats`, `nombre_commandes`
 
-### Implémentation
+#### Implémentation
 `UtilisateurSerializer` (ligne 318-326) inclut :
 - ✅ Tous les champs documentés
 - ✅ Champs supplémentaires : `preferences`, `nom_entreprise`, `siret`, `profil`, `statistiques_fidelite`, `age`, `est_nouveau`, `est_client_fidele`
@@ -176,13 +187,13 @@ Les champs documentés incluent :
 
 ---
 
-## 7. Gestion des Erreurs
+### 7. Gestion des Erreurs
 
-### Documentation
+#### Documentation
 - Erreurs de validation retournent `400 Bad Request`
 - Messages d'erreur clairs pour chaque cas
 
-### Implémentation
+#### Implémentation
 - ✅ `serializer.is_valid(raise_exception=True)` retourne `400` pour les erreurs de validation
 - ✅ Messages d'erreur personnalisés dans `validate()` et `validate_*()`
 - ✅ Gestion des erreurs DB avec `503 Service Unavailable` (ligne 128-135, 177-184)
@@ -191,12 +202,12 @@ Les champs documentés incluent :
 
 ---
 
-## 8. Email d'Activation
+### 8. Email d'Activation
 
-### Documentation
+#### Documentation
 - Mentionne que l'email d'activation est envoyé après l'inscription
 
-### Implémentation
+#### Implémentation
 - ✅ `UtilisateurViewSet.create()` : Envoie l'email via Celery (ligne 217-231)
 - ✅ `RegisterView.post()` : Envoie l'email via Celery (ligne 667-673)
 - ✅ Gestion gracieuse si Celery/Redis indisponible (ne fait pas échouer l'inscription)
@@ -205,21 +216,21 @@ Les champs documentés incluent :
 
 ---
 
-## 9. Points d'Attention
+### 9. Points d'Attention
 
-### 9.1 Messages d'Erreur Traduits
+#### 9.1 Messages d'Erreur Traduits
 
 Les messages d'erreur utilisent `_()` pour la traduction Django. Les messages exacts peuvent varier selon la langue configurée, mais les validations sont correctes.
 
 **Recommandation :** La documentation devrait mentionner que les messages peuvent varier selon la langue.
 
-### 9.2 Champs Supplémentaires dans la Réponse
+#### 9.2 Champs Supplémentaires dans la Réponse
 
 La réponse inclut plus de champs que documentés (ex: `profil`, `statistiques_fidelite`). C'est acceptable pour la rétrocompatibilité, mais pourrait être documenté.
 
 **Recommandation :** Ajouter une section "Champs supplémentaires" dans la documentation.
 
-### 9.3 Validation du Téléphone
+#### 9.3 Validation du Téléphone
 
 Le serializer normalise automatiquement le téléphone (ajoute `+33` si nécessaire). Ce comportement n'est pas documenté.
 
@@ -227,7 +238,7 @@ Le serializer normalise automatiquement le téléphone (ajoute `+33` si nécessa
 
 ---
 
-## 10. Résumé
+### 10. Résumé
 
 | Aspect | Statut | Notes |
 |--------|--------|-------|
@@ -242,7 +253,7 @@ Le serializer normalise automatiquement le téléphone (ajoute `+33` si nécessa
 
 ---
 
-## Conclusion
+### Conclusion
 
 **L'implémentation est CONFORME à la documentation.**
 
@@ -252,4 +263,207 @@ Quelques améliorations mineures pourraient être apportées à la documentation
 3. Documenter la normalisation automatique du téléphone
 
 Mais globalement, l'implémentation correspond fidèlement à ce qui est documenté.
+
+---
+
+## 🔍 Vérification du Port Gunicorn sur Railway
+
+Ce guide explique comment vérifier que Gunicorn écoute sur le bon port sur Railway.
+
+### 🔍 Problème Courant
+
+**Erreur** : "Le serveur n'écoute pas sur le port attendu"
+
+**Cause** : Railway définit automatiquement la variable `PORT`, mais elle peut être différente de 8080.
+
+---
+
+### ✅ Vérification Rapide
+
+#### 1. Vérifier les Logs Railway
+
+Dans les logs Railway, vous devriez voir :
+
+```
+📡 Port détecté depuis Railway: <PORT>
+✅ Démarrage du serveur Gunicorn...
+   📍 Écoute sur: 0.0.0.0:<PORT>
+```
+
+Le `<PORT>` affiché est le port que Railway attend.
+
+#### 2. Vérifier la Configuration
+
+**Fichier `start.sh`** :
+```bash
+exec gunicorn config.wsgi:application --bind 0.0.0.0:$PORT
+```
+
+✅ **Correct** : Utilise `$PORT` (variable Railway)
+
+❌ **Incorrect** : `--bind 0.0.0.0:8080` (port fixe)
+
+---
+
+### 🔧 Diagnostic
+
+#### Méthode 1 : Via les Logs Railway
+
+1. Allez dans Railway → Votre service Django
+2. Cliquez sur **"View Logs"**
+3. Cherchez la ligne : `📡 Port détecté depuis Railway:`
+4. Notez le port affiché
+
+#### Méthode 2 : Via Railway CLI
+
+```bash
+# Voir les variables d'environnement
+railway variables
+
+# Cherchez la variable PORT
+# Railway la définit automatiquement
+```
+
+#### Méthode 3 : Via Script de Diagnostic
+
+```bash
+# Exécuter le script de diagnostic
+railway run python scripts/check_port.py
+```
+
+Le script affichera :
+- Le port détecté
+- Si le port est en écoute
+- Les processus Gunicorn
+- Les variables Railway
+
+---
+
+### 🚨 Problèmes Courants
+
+#### Problème 1 : PORT non défini
+
+**Symptôme** : Logs affichent "PORT non défini, utilisation du port 8080 par défaut"
+
+**Solution** :
+- Railway devrait définir automatiquement `PORT`
+- Vérifiez que vous êtes bien sur Railway (pas en local)
+- Si le problème persiste, définissez manuellement `PORT=8080` dans Railway → Variables
+
+#### Problème 2 : Port différent de 8080
+
+**Symptôme** : Railway utilise un port différent (ex: 3000, 5000, etc.)
+
+**Solution** :
+- ✅ **C'est normal !** Railway peut utiliser n'importe quel port
+- Le script `start.sh` utilise automatiquement `$PORT`
+- Gunicorn écoute sur `0.0.0.0:$PORT` (tous les ports sont acceptés)
+
+#### Problème 3 : Gunicorn n'écoute pas
+
+**Symptôme** : Le port n'est pas en écoute
+
+**Vérifications** :
+1. Vérifiez les logs Railway pour voir si Gunicorn a démarré
+2. Vérifiez que `start.sh` est exécuté correctement
+3. Vérifiez que Gunicorn utilise bien `--bind 0.0.0.0:$PORT`
+
+---
+
+### 📋 Checklist
+
+- [ ] Variable `PORT` définie par Railway (automatique)
+- [ ] `start.sh` utilise `$PORT` et non un port fixe
+- [ ] Gunicorn démarre avec `--bind 0.0.0.0:$PORT`
+- [ ] Les logs affichent le port utilisé
+- [ ] Le port est en écoute (vérifiable via `check_port.py`)
+
+---
+
+### 🔍 Commandes Utiles
+
+#### Voir les variables d'environnement
+
+```bash
+railway variables
+```
+
+#### Voir les logs en temps réel
+
+```bash
+railway logs --follow
+```
+
+#### Exécuter le diagnostic
+
+```bash
+railway run python scripts/check_port.py
+```
+
+#### Vérifier manuellement le port
+
+```bash
+# Dans Railway shell
+netstat -tuln | grep LISTEN
+# ou
+ss -tuln | grep LISTEN
+```
+
+---
+
+### 💡 Notes Importantes
+
+1. **Railway définit automatiquement PORT** : Vous n'avez pas besoin de le définir manuellement
+2. **Le port peut varier** : Railway peut utiliser 3000, 5000, 8080, ou tout autre port
+3. **Gunicorn doit écouter sur 0.0.0.0** : Pas sur 127.0.0.1 (localhost uniquement)
+4. **Le port doit être dynamique** : Utilisez `$PORT` et non un port fixe
+
+---
+
+### ✅ Configuration Correcte
+
+#### start.sh (correct)
+
+```bash
+exec gunicorn config.wsgi:application --bind 0.0.0.0:$PORT
+```
+
+#### railway.json (correct)
+
+```json
+{
+  "deploy": {
+    "startCommand": "bash start.sh"
+  }
+}
+```
+
+---
+
+### 🚀 Après Correction
+
+Une fois corrigé, vous devriez voir dans les logs :
+
+```
+📡 Port détecté depuis Railway: 8080
+✅ Démarrage du serveur Gunicorn...
+   📍 Écoute sur: 0.0.0.0:8080
+   🔗 Health check: http://0.0.0.0:8080/api/health/
+[INFO] Starting gunicorn 21.2.0
+[INFO] Listening at: http://0.0.0.0:8080
+```
+
+Et Railway devrait pouvoir se connecter à votre application.
+
+---
+
+## 📚 Ressources
+
+- [Documentation Railway](https://docs.railway.app/)
+- [Documentation Gunicorn](https://gunicorn.org/)
+- [Documentation Django REST Framework](https://www.django-rest-framework.org/)
+
+---
+
+*Dernière mise à jour : 2025-01-17*
 

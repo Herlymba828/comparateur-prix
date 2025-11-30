@@ -141,6 +141,48 @@ def send_activation_email_uid(user_email: str, activation_url: str):
         raise
 
 @shared_task
+def send_activation_code_email(user_email: str, activation_code: str):
+    """Envoie l'email d'activation avec un code à 6 chiffres."""
+    import traceback
+    try:
+        sujet = _("Code d'activation de votre compte")
+        message = _(
+            "Bonjour,\n\n"
+            "Merci de votre inscription sur Comparateur Prix.\n\n"
+            "Votre code d'activation est : {code}\n\n"
+            "Ce code est valable pendant 15 minutes. Entrez ce code dans l'application pour activer votre compte.\n\n"
+            "Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.\n\n"
+            "Cordialement,\nL'équipe Comparateur Prix"
+        ).format(code=activation_code)
+        
+        from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'no-reply@example.com')
+        
+        logger.info(f"Tentative d'envoi d'email d'activation avec code. Email: {user_email}, From: {from_email}")
+        
+        send_mail(
+            sujet,
+            message,
+            from_email,
+            [user_email],
+            fail_silently=False,
+        )
+        logger.info(f"✅ Email avec code d'activation envoyé avec succès à {user_email}")
+    except Exception as e:
+        error_type = type(e).__name__
+        error_traceback = traceback.format_exc()
+        error_details = (
+            f"❌ Erreur envoi email avec code d'activation\n"
+            f"Email destinataire: {user_email}\n"
+            f"Code d'activation: {activation_code[:2]}**** (masqué)\n"
+            f"Type: {error_type}\n"
+            f"Message: {str(e)}\n"
+            f"Traceback:\n{error_traceback}"
+        )
+        logger.error(error_details)
+        print(f"[ERROR] Erreur envoi email activation code: {error_type} - {str(e)}. Email: {user_email}.", file=__import__('sys').stderr, flush=True)
+        raise
+
+@shared_task
 def task_nettoyage_historique():
     """
     Tâche de nettoyage de l'historique ancien

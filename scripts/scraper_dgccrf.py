@@ -30,14 +30,14 @@ from urllib3.util.retry import Retry
 # Utiliser des imports absolus pour supporter le chargement dynamique
 try:
     # Essayer d'abord les imports relatifs (si exécuté comme module)
-from .data_saver import DataSaver
-from .config import (
-    DEFAULT_BASE_URL, DEFAULT_USER_AGENT, REQUEST_DELAY_SEC, REQUEST_TIMEOUT,
-    MAX_RETRIES, BACKOFF_SEC, HTTP_PROXY, LOG_FILE, STATE_FILE, CHECKPOINT_PATH,
-    RAW_DIR, DEFAULT_REPORT_OUT, SAVE_TO_DB, RESPECT_ROBOTS, SKIP_UNCHANGED,
-    PRIX_HOMOLOGUE_URL, LISTE_PRODUIT_URL, PRODUIT_PETROLIER_URL,
-    OFF_ENABLE, OFF_TIMEOUT, OFF_MIN_SCORE
-)
+    from .data_saver import DataSaver
+    from .config import (
+        DEFAULT_BASE_URL, DEFAULT_USER_AGENT, REQUEST_DELAY_SEC, REQUEST_TIMEOUT,
+        MAX_RETRIES, BACKOFF_SEC, HTTP_PROXY, LOG_FILE, STATE_FILE, CHECKPOINT_PATH,
+        RAW_DIR, DEFAULT_REPORT_OUT, SAVE_TO_DB, RESPECT_ROBOTS, SKIP_UNCHANGED,
+        PRIX_HOMOLOGUE_URL, LISTE_PRODUIT_URL, PRODUIT_PETROLIER_URL,
+        OFF_ENABLE, OFF_TIMEOUT, OFF_MIN_SCORE
+    )
 except ImportError:
     # Fallback: imports absolus depuis scripts/ (pour chargement dynamique)
     import sys
