@@ -276,7 +276,7 @@ MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',  # Doit être placé avant CommonMiddleware
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
-    'django.middleware.gzip.GZipMiddleware',
+    'config.middleware.CompressionMiddleware',  # Compression optimisée (remplace GZipMiddleware)
     'django.middleware.http.ConditionalGetMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',

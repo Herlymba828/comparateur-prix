@@ -1,11 +1,12 @@
 from django.http import JsonResponse
-from django.db.models import Min, Q, Count
+from django.db.models import Min, Max, Q, Count
 from django.utils.dateparse import parse_datetime, parse_date
 from django.core.cache import cache
 from datetime import datetime, time
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework.status import HTTP_200_OK, HTTP_500_INTERNAL_SERVER_ERROR
+from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
 from apps.produits.models import Produit
@@ -47,7 +48,7 @@ class TestConnectionView(APIView):
 
 @api_view(["GET"])
 def search_produits(request):
-    """Recherche de produits avec prix minimum agrégé (option filtres)."""
+    """Recherche de produits avec prix minimum agrégé (option filtres) - OPTIMISÉ."""
     q = (request.GET.get("q") or "").strip()
     categorie = request.GET.get("categorie")
     marque = (request.GET.get("marque") or "").strip()
@@ -70,7 +71,9 @@ def search_produits(request):
         logger.debug(f"Cache hit pour search_produits: {cache_key[:50]}")
         return Response(cached, status=HTTP_200_OK)
 
-    produits = Produit.objects.select_related("categorie", "marque").all()
+    # ✅ OPTIMISATION : select_related + annotation en une requête
+    produits = Produit.objects.select_related("categorie", "marque", "unite_mesure")
+    
     if q:
         produits = produits.filter(
             Q(nom__icontains=q)
@@ -82,60 +85,95 @@ def search_produits(request):
     if marque:
         produits = produits.filter(marque__nom__icontains=marque)
 
-    # Annoter le prix minimum via relation inverse Prix -> Produit
-    produits = produits.annotate(min_prix=Min("prix__prix_actuel"))
+    # ✅ OPTIMISATION : Annotation avec filtre sur est_disponible
+    produits = produits.annotate(
+        min_prix=Min("prix__prix_actuel", filter=Q(prix__est_disponible=True)),
+        max_prix=Max("prix__prix_actuel", filter=Q(prix__est_disponible=True)),
+        prix_count=Count("prix", filter=Q(prix__est_disponible=True)),
+    ).filter(est_actif=True)  # Filtrer les produits actifs
 
+    # ✅ OPTIMISATION : Compter AVANT de paginer (plus efficace)
     total = produits.count()
     start = (page - 1) * page_size
-    end = start + page_size
-
-    items = []
-    for p in produits.order_by("nom")[start:end]:
-        items.append(
-            {
-                "id": p.id,
-                "nom": p.nom,
-                "marque": (p.marque.nom if getattr(p, "marque", None) else ""),
-                "categorie_id": p.categorie_id,
-                "categorie_nom": p.categorie.nom if p.categorie else "",
-                "min_prix": p.min_prix,
-                "devise": "XAF" if p.min_prix is not None else None,
-            }
+    
+    # ✅ OPTIMISATION : Utiliser values() pour réduire la taille des données
+    items_data = list(
+        produits.order_by("nom")[start:start + page_size]
+        .values(
+            "id", "nom",
+            "categorie_id", "categorie__nom",
+            "marque__nom",
+            "min_prix", "max_prix", "prix_count"
         )
+    )
+    
+    # Formater les résultats
+    items = [
+        {
+            "id": item["id"],
+            "nom": item["nom"],
+            "marque": item["marque__nom"] or "",
+            "categorie_id": item["categorie_id"],
+            "categorie_nom": item["categorie__nom"] or "",
+            "min_prix": item["min_prix"],
+            "max_prix": item["max_prix"],
+            "prix_count": item["prix_count"],
+            "devise": "XAF" if item["min_prix"] is not None else None,
+        }
+        for item in items_data
+    ]
 
     data = {"count": total, "results": ProductSearchResultSerializer(items, many=True).data}
 
     # Mettre en cache avec TTL adaptatif
-    # TTL plus long pour les recherches avec filtres (15 min) vs recherches simples (5 min)
     ttl = 900 if (categorie or marque) else 300
     cache.set(cache_key, data, ttl)
     logger.debug(f"Cache miss pour search_produits, mis en cache avec TTL {ttl}s")
 
-    # Journaliser la recherche (un événement par requête)
+    # ✅ OPTIMISATION : Log asynchrone (ne bloque pas la réponse)
     try:
         if q:
-            user = request.user if getattr(request, 'user', None) and request.user.is_authenticated else None
-            ip = (request.META.get('HTTP_X_FORWARDED_FOR') or request.META.get('REMOTE_ADDR') or '').split(',')[0].strip()
-            ip_hash = hashlib.sha256(ip.encode('utf-8')).hexdigest()[:64] if ip else ''
-            # Tenter d'associer un produit si le terme est un nom exact
-            produit_obj = None
+            # Importer la tâche asynchrone si disponible, sinon log synchrone
             try:
-                pid = Produit.objects.filter(nom__iexact=q).values_list('id', flat=True).first()
-                if pid:
-                    produit_obj = Produit.objects.only('id').get(id=pid)
-            except Exception:
+                from .tasks import log_search_event_async
+                user_id = request.user.id if request.user.is_authenticated else None
+                ip = (request.META.get('HTTP_X_FORWARDED_FOR') or request.META.get('REMOTE_ADDR') or '').split(',')[0].strip()
+                ip_hash = hashlib.sha256(ip.encode('utf-8')).hexdigest()[:64] if ip else ''
+                
+                # Trouver le produit si nom exact
+                produit_id = None
+                try:
+                    produit_id = Produit.objects.filter(nom__iexact=q).values_list('id', flat=True).first()
+                except Exception:
+                    pass
+                
+                # Envoyer la tâche asynchrone
+                log_search_event_async.delay(q, produit_id, user_id, ip_hash)
+            except ImportError:
+                # Fallback vers log synchrone si Celery n'est pas disponible
+                user = request.user if getattr(request, 'user', None) and request.user.is_authenticated else None
+                ip = (request.META.get('HTTP_X_FORWARDED_FOR') or request.META.get('REMOTE_ADDR') or '').split(',')[0].strip()
+                ip_hash = hashlib.sha256(ip.encode('utf-8')).hexdigest()[:64] if ip else ''
                 produit_obj = None
-            SearchEvent.objects.create(q=q, produit=produit_obj, utilisateur=user, ip_hash=ip_hash)
+                try:
+                    pid = Produit.objects.filter(nom__iexact=q).values_list('id', flat=True).first()
+                    if pid:
+                        produit_obj = Produit.objects.only('id').get(id=pid)
+                except Exception:
+                    produit_obj = None
+                SearchEvent.objects.create(q=q, produit=produit_obj, utilisateur=user, ip_hash=ip_hash)
     except Exception:
         # Ne jamais bloquer la réponse sur un problème de log
         pass
+    
     return Response(data, status=HTTP_200_OK)
 
 
 @api_view(["GET"])
 def autocomplete_produits(request):
+    """Autocomplete de produits - OPTIMISÉ."""
     q = (request.GET.get("q") or "").strip()
-    if not q:
+    if not q or len(q) < 2:  # ✅ OPTIMISATION : Minimum 2 caractères
         return Response({"results": []}, status=HTTP_200_OK)
     
     # Cache key simple basé sur la requête (normalisée en minuscules)
@@ -147,11 +185,16 @@ def autocomplete_produits(request):
         logger.debug(f"Cache hit pour autocomplete: {q}")
         return Response(cached, status=HTTP_200_OK)
     
+    # ✅ OPTIMISATION : utiliser only() pour limiter les champs chargés
+    # ✅ Limite stricte à 10 résultats (suffisant pour autocomplete)
     qs = (
-        Produit.objects.filter(nom__icontains=q)
+        Produit.objects
+        .filter(est_actif=True, nom__icontains=q)
+        .only("id", "nom")  # Charger uniquement les champs nécessaires
         .order_by("nom")
-        .values("id", "nom")[:10]
+        .values("id", "nom")[:10]  # Limite stricte
     )
+    
     results = [{"id": row["id"], "label": row["nom"]} for row in qs]
     data = {"results": AutocompleteResultSerializer(results, many=True).data}
     
