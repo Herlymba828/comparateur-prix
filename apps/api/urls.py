@@ -10,6 +10,7 @@ from .views import (
 )
 from .views_nearby import prix_proches_public
 from .views_diagnostic import diagnostic_api, endpoints_list
+from .views_admin import populate_database, reset_database, database_stats
 
 urlpatterns = [
     path('health/', health, name='api-health'),
@@ -24,4 +25,9 @@ urlpatterns = [
     path('stats/prix/', stats_prix, name='api-stats-prix'),
     # Alias pour stats homologations
     path('stats/homologations/', homologations_stats, name='api-stats-homologations'),
+    
+    # Admin endpoints (temporaires pour setup)
+    path('admin/populate/', populate_database, name='api-admin-populate'),
+    path('admin/reset/', reset_database, name='api-admin-reset'),
+    path('admin/stats/', database_stats, name='api-admin-stats'),
 ]
