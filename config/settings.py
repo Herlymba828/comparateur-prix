@@ -559,7 +559,13 @@ if not DEBUG:
         raise ImproperlyConfigured(error_msg)
     # Activer SSL vers PostgreSQL par défaut (désactivable via POSTGRES_SSL_REQUIRE=false)
     # MAIS seulement si ce n'est pas localhost
-    if DB_ENGINE == 'postgresql':
+    try:
+        db_engine_check = DB_ENGINE
+    except NameError:
+        # Si DB_ENGINE n'existe pas, détecter depuis DATABASES
+        db_engine_check = 'postgresql' if 'postgresql' in DATABASES['default']['ENGINE'] else 'mysql'
+    
+    if db_engine_check == 'postgresql':
         db_host = DATABASES['default'].get('HOST', '')
         is_local = db_host in ('localhost', '127.0.0.1', '::1') or 'localhost' in str(db_host).lower()
         
