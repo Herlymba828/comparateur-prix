@@ -1,7 +1,13 @@
 # Ajouter ces tâches dans le fichier config/celery.py existant
 from __future__ import absolute_import
 import os
+import sys
+from pathlib import Path
 from celery import Celery
+
+# Ajouter le répertoire racine du projet au PYTHONPATH
+BASE_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(BASE_DIR))
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 
