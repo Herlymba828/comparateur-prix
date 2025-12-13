@@ -277,12 +277,15 @@ MIDDLEWARE = [
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'config.middleware.CompressionMiddleware',  # Compression optimisée (remplace GZipMiddleware)
+    'apps.api.compression_middleware.SmartCompressionMiddleware',  # NOUVEAU: Compression gzip intelligente
+    'apps.api.compression_middleware.JSONMinificationMiddleware',  # NOUVEAU: Minification JSON
     'django.middleware.http.ConditionalGetMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'social_django.middleware.SocialAuthExceptionMiddleware',
     'django_otp.middleware.OTPMiddleware',
     'apps.utilisateurs.middleware.AuthErrorEnhancementMiddleware',  # Améliore les réponses 401
+    'apps.api.middleware.PerformanceMonitoringMiddleware',  # NOUVEAU: Monitoring des performances
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'config.middleware.JSONExceptionMiddleware',  # Doit être en dernier pour intercepter toutes les exceptions
@@ -718,15 +721,20 @@ REST_FRAMEWORK = {
         'rest_framework.filters.SearchFilter',
         'rest_framework.filters.OrderingFilter',
     ],
-    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    # OPTIMISÉ: Pagination intelligente
+    'DEFAULT_PAGINATION_CLASS': 'apps.api.pagination.OptimizedPageNumberPagination',
     'PAGE_SIZE': 20,
+    # OPTIMISÉ: Throttling intelligent
     'DEFAULT_THROTTLE_CLASSES': [
-        'apps.utilisateurs.throttling.SafeAnonRateThrottle',
-        'apps.utilisateurs.throttling.SafeUserRateThrottle',
+        'apps.api.throttling.SmartAnonRateThrottle',
+        'apps.api.throttling.SmartUserRateThrottle',
     ],
     'DEFAULT_THROTTLE_RATES': {
         'anon': os.getenv('DRF_THROTTLE_ANON', '100/min'),
         'user': os.getenv('DRF_THROTTLE_USER', '1000/min'),
+        'burst': '10/sec',  # Pour pics de trafic
+        'sustained': '1000/hour',  # Pour trafic soutenu
+        'ip': '200/min',  # Par IP
         # Scopes spécifiques pour les endpoints d'auth
         'register': os.getenv('DRF_THROTTLE_REGISTER', '10/min'),
         'activate': os.getenv('DRF_THROTTLE_ACTIVATE', '30/min'),

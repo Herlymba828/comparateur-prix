@@ -28,8 +28,34 @@ from .services.normalize import normalize_ebay_item
 import hashlib
 
 
-def health(_request):
-    return JsonResponse({"status": "ok"})
+def health(request):
+    """
+    Health check endpoint amélioré avec monitoring.
+    Retourne le statut de santé du système.
+    """
+    from .monitoring import HealthChecker, PerformanceMonitor
+    
+    # Mode simple (par défaut)
+    detailed = request.GET.get('detailed', 'false').lower() == 'true'
+    
+    if not detailed:
+        # Health check simple et rapide
+        return JsonResponse({
+            "status": "ok",
+            "timestamp": datetime.now().isoformat()
+        })
+    
+    # Health check détaillé
+    health_status = HealthChecker.get_full_health_status()
+    
+    # Ajouter les métriques si demandées
+    if request.GET.get('metrics', 'false').lower() == 'true':
+        health_status['metrics'] = PerformanceMonitor.get_metrics()
+    
+    # Déterminer le code de statut HTTP
+    status_code = 200 if health_status['status'] == 'healthy' else 503
+    
+    return JsonResponse(health_status, status=status_code)
 
 
 class TestConnectionView(APIView):

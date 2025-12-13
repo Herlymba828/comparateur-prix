@@ -5,19 +5,19 @@ Ce module fournit des fonctionnalités pour extraire les données de prix
 à partir du site de la DGCCRF avec gestion des erreurs et des reprises.
 """
 
-import argparse
-import hashlib
+import os
+import re
+import sys
+import time
 import json
 import logging
-import os
+import hashlib
 import pathlib
 import random
-import re
 import socket
-import sys
+import argparse
 from datetime import datetime, timezone
-from decimal import Decimal
-from typing import Any, Dict, Iterator, List, Optional, Set, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Any, Set, Union, Iterator
 from urllib.parse import urljoin, urlparse
 
 import requests
@@ -32,15 +32,19 @@ try:
     # Essayer d'abord les imports relatifs (si exécuté comme module)
     from .data_saver import DataSaver
     from .config import (
-        BACKOFF_SEC, CHECKPOINT_PATH, DEFAULT_BASE_URL, DEFAULT_REPORT_OUT,
-        DEFAULT_USER_AGENT, HTTP_PROXY, LISTE_PRODUIT_URL, LOG_FILE,
-        MAX_RETRIES, OFF_ENABLE, OFF_MIN_SCORE, OFF_TIMEOUT, PRIX_HOMOLOGUE_URL,
-        PRODUIT_PETROLIER_URL, RAW_DIR, REQUEST_DELAY_SEC, REQUEST_TIMEOUT,
-        RESPECT_ROBOTS, SAVE_TO_DB, SKIP_UNCHANGED, STATE_FILE
+        DEFAULT_BASE_URL, DEFAULT_USER_AGENT, REQUEST_DELAY_SEC, REQUEST_TIMEOUT,
+        MAX_RETRIES, BACKOFF_SEC, HTTP_PROXY, LOG_FILE, STATE_FILE, CHECKPOINT_PATH,
+        RAW_DIR, DEFAULT_REPORT_OUT, SAVE_TO_DB, RESPECT_ROBOTS, SKIP_UNCHANGED,
+        PRIX_HOMOLOGUE_URL, LISTE_PRODUIT_URL, PRODUIT_PETROLIER_URL,
+        OFF_ENABLE, OFF_TIMEOUT, OFF_MIN_SCORE
     )
-except ImportError as imp_err:
+except ImportError:
     # Fallback: imports absolus depuis scripts/ (pour chargement dynamique)
-    script_dir = pathlib.Path(__file__).parent
+    import sys
+    from pathlib import Path
+    
+    # Ajouter le répertoire scripts au path si nécessaire
+    script_dir = Path(__file__).parent
     if str(script_dir) not in sys.path:
         sys.path.insert(0, str(script_dir))
     
@@ -65,27 +69,27 @@ except ImportError as imp_err:
         spec_cfg.loader.exec_module(config_module)
         
         # Importer les variables depuis le module chargé
-        BACKOFF_SEC = config_module.BACKOFF_SEC
-        CHECKPOINT_PATH = config_module.CHECKPOINT_PATH
         DEFAULT_BASE_URL = config_module.DEFAULT_BASE_URL
-        DEFAULT_REPORT_OUT = config_module.DEFAULT_REPORT_OUT
         DEFAULT_USER_AGENT = config_module.DEFAULT_USER_AGENT
-        HTTP_PROXY = config_module.HTTP_PROXY
-        LISTE_PRODUIT_URL = config_module.LISTE_PRODUIT_URL
-        LOG_FILE = config_module.LOG_FILE
-        MAX_RETRIES = config_module.MAX_RETRIES
-        OFF_ENABLE = config_module.OFF_ENABLE
-        OFF_MIN_SCORE = config_module.OFF_MIN_SCORE
-        OFF_TIMEOUT = config_module.OFF_TIMEOUT
-        PRIX_HOMOLOGUE_URL = config_module.PRIX_HOMOLOGUE_URL
-        PRODUIT_PETROLIER_URL = config_module.PRODUIT_PETROLIER_URL
-        RAW_DIR = config_module.RAW_DIR
         REQUEST_DELAY_SEC = config_module.REQUEST_DELAY_SEC
         REQUEST_TIMEOUT = config_module.REQUEST_TIMEOUT
-        RESPECT_ROBOTS = config_module.RESPECT_ROBOTS
-        SAVE_TO_DB = config_module.SAVE_TO_DB
-        SKIP_UNCHANGED = config_module.SKIP_UNCHANGED
+        MAX_RETRIES = config_module.MAX_RETRIES
+        BACKOFF_SEC = config_module.BACKOFF_SEC
+        HTTP_PROXY = config_module.HTTP_PROXY
+        LOG_FILE = config_module.LOG_FILE
         STATE_FILE = config_module.STATE_FILE
+        CHECKPOINT_PATH = config_module.CHECKPOINT_PATH
+        RAW_DIR = config_module.RAW_DIR
+        DEFAULT_REPORT_OUT = config_module.DEFAULT_REPORT_OUT
+        SAVE_TO_DB = config_module.SAVE_TO_DB
+        RESPECT_ROBOTS = config_module.RESPECT_ROBOTS
+        SKIP_UNCHANGED = config_module.SKIP_UNCHANGED
+        PRIX_HOMOLOGUE_URL = config_module.PRIX_HOMOLOGUE_URL
+        LISTE_PRODUIT_URL = config_module.LISTE_PRODUIT_URL
+        PRODUIT_PETROLIER_URL = config_module.PRODUIT_PETROLIER_URL
+        OFF_ENABLE = config_module.OFF_ENABLE
+        OFF_TIMEOUT = config_module.OFF_TIMEOUT
+        OFF_MIN_SCORE = config_module.OFF_MIN_SCORE
     else:
         raise ImportError(f"Module config introuvable: {config_path}")
 
@@ -100,42 +104,51 @@ def setup_logging(debug: bool = False) -> logging.Logger:
     """
     logger = logging.getLogger('dgccrf_scraper')
     
-    # Nettoyer les gestionnaires existants
-    for handler in logger.handlers[:]:
-        logger.removeHandler(handler)
+    # Éviter de reconfigurer un logger existant
+    if logger.handlers:
+        return logger
     
     # Niveau de journalisation
-    logger.setLevel(logging.DEBUG if debug else logging.INFO)
+    log_level = logging.DEBUG if debug else logging.INFO
+    logger.setLevel(log_level)
     
-    # Formateur
+    # Format des messages
     formatter = logging.Formatter(
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
     
-    # Gestionnaire console
-    console_handler = logging.StreamHandler()
+    # Handler pour la console (sortie standard)
+    console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(formatter)
+    console_handler.setLevel(log_level)
     logger.addHandler(console_handler)
     
-    # Fichier de log si configuré
+    # Handler pour le fichier de log si spécifié
     if LOG_FILE:
         try:
             # Créer le répertoire de logs si nécessaire
             log_dir = os.path.dirname(LOG_FILE)
-            if log_dir:
+            if log_dir and not os.path.exists(log_dir):
                 os.makedirs(log_dir, exist_ok=True)
                 
+            # Configurer le handler de fichier
             file_handler = logging.FileHandler(LOG_FILE, encoding='utf-8')
             file_handler.setFormatter(formatter)
+            file_handler.setLevel(log_level)
             logger.addHandler(file_handler)
-        except (OSError, IOError) as io_err:
-            logger.error(
-                "Impossible de configurer la journalisation dans un fichier: %s",
-                io_err
-            )
+            
+            logger.info("Journalisation vers %s activée (niveau: %s)", 
+                       os.path.abspath(LOG_FILE), 
+                       logging.getLevelName(log_level))
+            
+        except (OSError, IOError) as e:
+            logger.error("Impossible de configurer le fichier de log %s: %s", 
+                        LOG_FILE, str(e), exc_info=True)
+        except Exception as e:
+            logger.critical("Erreur critique lors de la configuration des logs: %s", 
+                          str(e), exc_info=True)
     
-    # Désactiver les logs trop verbeux de certaines bibliothèques
     # Configuration des logs pour les bibliothèques tierces
     logging.getLogger('requests').setLevel(logging.WARNING)
     logging.getLogger('urllib3').setLevel(logging.WARNING)
@@ -1762,152 +1775,23 @@ class DgccrfScraper:
     # Persistance ORM optionnelle
     # -------------------
     def _init_django(self) -> bool:
-        """Initialise Django et vérifie les dépendances nécessaires.
-        
-        Returns:
-            bool: True si l'initialisation a réussi, False sinon
-        """
         try:
+            # S'assurer que la racine du projet est sur sys.path (scripts/ est un sous-dossier)
             import sys
             import pathlib as _pl
-            from django.conf import settings
-            
-            # Vérifier si Django est déjà configuré
-            if settings.configured:
-                self.logger.debug("Django est déjà configuré")
-                return True
-                
-            # Ajouter la racine du projet au path si nécessaire
             project_root = _pl.Path(__file__).resolve().parents[1]
             if str(project_root) not in sys.path:
                 sys.path.insert(0, str(project_root))
-                
-            # Configurer les paramètres Django
+            import django  # noqa
             os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
-            
-            # Importer et initialiser Django
-            import django
-            from django.apps import apps
             django.setup()
-            
-            # Vérifier que les modèles nécessaires sont chargés
-            required_models = [
-                'produits.Produit', 
-                'produits.Prix', 
-                'produits.Categorie',
-                'produits.UniteMesure',
-                'produits.Marque',
-                'magasins.Magasin',
-                'magasins.Ville',
-                'magasins.Region'
-            ]
-            
-            for model in required_models:
-                apps.get_model(model)
-                
-            self.logger.info("Django initialisé avec succès")
             return True
-            
         except Exception as exc:
-            self.logger.exception("Erreur critique lors de l'initialisation de Django")
+            logger.error(f"Impossible d'initialiser Django: {exc}")
             return False
 
-    class ProduitValidator:
-        """Classe utilitaire pour valider les données des produits avant enregistrement."""
-        
-        @classmethod
-        def validate_item(cls, item: Dict[str, Any]) -> Tuple[bool, List[str]]:
-            """Valide un élément de produit.
-            
-            Args:
-                item: Dictionnaire contenant les données du produit
-                
-            Returns:
-                Tuple[bool, List[str]]: (True, []) si valide, (False, [erreurs]) sinon
-            """
-            errors = []
-            
-            # Vérification des champs obligatoires
-            required_fields = ['nom', 'prix_unitaire']
-            for field in required_fields:
-                if not item.get(field):
-                    errors.append(f"Champ requis manquant: {field}")
-            
-            # Validation du format du prix
-            prix = item.get('prix_unitaire')
-            if prix is not None:
-                try:
-                    prix_val = float(str(prix).replace(' ', '').replace(',', '.'))
-                    if prix_val <= 0:
-                        errors.append("Le prix doit être supérieur à zéro")
-                except (ValueError, TypeError):
-                    errors.append(f"Format de prix invalide: {prix}")
-            
-            # Validation de la catégorie
-            if item.get('categorie') and cls._is_price_value(str(item['categorie'])):
-                errors.append("Le nom de la catégorie ne peut pas être un prix")
-                
-            # Validation du format du conditionnement
-            if item.get('conditionnement'):
-                conditionnement = str(item['conditionnement'])
-                if not any(x in conditionnement.lower() for x in ['g', 'kg', 'l', 'ml', 'cl', 'unité', 'pièce']):
-                    if not any(c.isalpha() for c in conditionnement):
-                        errors.append("Format de conditionnement invalide")
-            
-            return len(errors) == 0, errors
-        
-        @staticmethod
-        def _is_price_value(text: str) -> bool:
-            """Vérifie si un texte ressemble à un prix."""
-            if not text:
-                return False
-                
-            # Si le texte contient des lettres significatives, ce n'est probablement pas un prix
-            letters = sum(1 for c in text if c.isalpha())
-            digits = sum(1 for c in text if c.isdigit())
-            
-            # Si plus de lettres que de chiffres, ce n'est pas un prix
-            if letters > digits:
-                return False
-            
-            # Nettoyer le texte
-            cleaned = text.replace('FCFA', '').replace('CFA', '').replace('F', '').strip()
-            cleaned = cleaned.replace(' ', '').replace(',', '.').replace('\xa0', '')
-            
-            # Garder seulement un point décimal
-            if cleaned.count('.') > 1:
-                parts = cleaned.split('.')
-                cleaned = parts[0] + '.' + ''.join(parts[1:])
-            
-            # Vérifier si c'est principalement un nombre
-            if not cleaned or not cleaned.replace('.', '').isdigit():
-                return False
-            
-            try:
-                val = float(cleaned)
-                return 0 < val < 10000000 and digits >= 3
-            except ValueError:
-                return False
-    
     def persist_items(self, items: List[Dict[str, Any]]) -> Tuple[int, int]:
-        """Persiste les éléments dans la base de données Django.
-        
-        Args:
-            items: Liste de dictionnaires contenant les données à persister
-            
-        Returns:
-            Tuple[int, int]: Nombre de produits et prix créés
-        """
-        # Initialiser Django si nécessaire
-        if not hasattr(self, '_django_initialized'):
-            self._django_initialized = self._init_django()
-            if not self._django_initialized:
-                self.logger.error("Impossible d'initialiser Django. Vérifiez la configuration.")
-                return 0, 0
-        
         try:
-            from django.db import transaction
-            from django.utils import timezone
             from apps.produits.models import Produit, Prix, Categorie, UniteMesure, Marque, HomologationProduit, PrixHomologue
             from apps.magasins.models import Magasin, Ville, Region
             from django.utils.text import slugify
@@ -1916,48 +1800,62 @@ class DgccrfScraper:
             logger.error(f"Dépendances Django indisponibles: {exc}")
             return (0, 0)
 
-        start_time = time.time()
-        self.logger.info(f"Début de la persistance de {len(items)} éléments")
-        
-        # Initialiser les compteurs
         created_prod = 0
         created_prix = 0
-        validated_items = []
-        
-        # Valider les éléments avant traitement
-        validator = self.ProduitValidator()
-        for item in items:
-            is_valid, errors = validator.validate_item(item)
-            if not is_valid:
-                self.logger.warning(f"Élément invalide ignoré: {errors} - {item.get('nom', 'Sans nom')}")
-                continue
-            validated_items.append(item)
-        
-        if not validated_items:
-            self.logger.warning("Aucun élément valide à persister")
-            return 0, 0
-            
-        self.logger.info(f"{len(validated_items)} éléments valides à persister")
-        
-        try:
-            # Démarrer une transaction
-            with transaction.atomic():
-                # Valeurs par défaut pour rattachement magasin
-                region, _ = Region.objects.get_or_create(nom='Estuaire')
-                ville, _ = Ville.objects.get_or_create(nom='Libreville', region=region)
 
-                # Traiter chaque élément validé
-                for it in validated_items:
-                    nom = (it.get('nom') or '').strip()
+        # Valeurs par défaut pour rattachement magasin
+        region, _ = Region.objects.get_or_create(nom='Estuaire')
+        ville, _ = Ville.objects.get_or_create(nom='Libreville', region=region)
+
+        for it in items:
+            nom = (it.get('nom') or '').strip()
+            if not nom:
+                continue
             
-            # Utiliser la méthode de validation de la classe ProduitValidator
+            # Validation: s'assurer que les catégories ne sont pas des prix
+            def is_price_value(text: str) -> bool:
+                """Vérifie si un texte est un prix ou une valeur numérique.
+                
+                Une catégorie ne doit pas être un prix. On vérifie si le texte
+                est principalement composé de chiffres et ressemble à un montant.
+                """
+                if not text:
+                    return False
+                
+                # Si le texte contient des lettres significatives, ce n'est probablement pas un prix
+                # (ex: "VIANDE DE PORC" contient des lettres)
+                letters = sum(1 for c in text if c.isalpha())
+                digits = sum(1 for c in text if c.isdigit())
+                
+                # Si plus de lettres que de chiffres, ce n'est pas un prix
+                if letters > digits:
+                    return False
+                
+                # Nettoyer le texte (retirer FCFA, espaces, etc.)
+                cleaned = text.replace('FCFA', '').replace('CFA', '').replace('F', '').strip()
+                cleaned = cleaned.replace(' ', '').replace(',', '.').replace('\xa0', '')
+                # Garder seulement un point décimal
+                if cleaned.count('.') > 1:
+                    # Garder le premier point, retirer les autres
+                    parts = cleaned.split('.')
+                    cleaned = parts[0] + '.' + ''.join(parts[1:])
+                
+                # Vérifier si c'est principalement un nombre
+                if not cleaned or not cleaned.replace('.', '').isdigit():
+                    return False
+                
+                try:
+                    val = float(cleaned)
+                    # Si c'est un nombre raisonnable pour un prix (> 0 et < 10 millions FCFA)
+                    # et qu'il n'y a pas beaucoup de lettres
+                    return 0 < val < 10000000 and digits >= 3
+                except ValueError:
+                    return False
             
-            # Gestion de la catégorie avec validation
             cat_nom = (it.get('categorie') or 'Non classé').strip() or 'Non classé'
-            
-            # La validation a déjà été faite, mais on vérifie à nouveau par sécurité
-            if self.ProduitValidator._is_price_value(cat_nom):
-                self.logger.warning(f"Nom de catégorie ignoré (ressemble à un prix): '{cat_nom}' pour produit '{nom}'")
+            # Ne pas créer de catégorie si le nom est un prix
+            if is_price_value(cat_nom):
+                logger.warning(f"Nom de catégorie ignoré (ressemble à un prix): '{cat_nom}' pour produit '{nom}'")
                 cat_nom = 'Non classé'
             
             cat_slug = slugify(cat_nom)[:100] or 'non-classe'
@@ -2224,27 +2122,18 @@ class DgccrfScraper:
                     'ville': ville,
                     'localisation': zone,
                     'zone': zone,
+                    # Adresse synthétique pour améliorer le géocodage
                     'adresse': f"{zone}, {ville.nom}, {region.nom}, Gabon",
                 }
             )
 
-            # Création/mise à jour du prix avec gestion des erreurs
-            try:
-                valeur = it.get('prix_unitaire') or it.get('prix_detail')
-                if valeur is not None:
-                    # Convertir la valeur en Decimal pour éviter les erreurs de type
-                    try:
-                        if isinstance(valeur, str):
-                            # Supprimer les espaces et remplacer la virgule par un point
-                            valeur = Decimal(str(valeur).replace(' ', '').replace(',', '.'))
-                        else:
-                            valeur = Decimal(str(valeur))
-                    except (ValueError, TypeError) as e:
-                        self.logger.error(f"Format de prix invalide pour {nom}: {valeur}")
-                        continue
-                    
-                    # Préparer les données du prix
-                    prix_data = {
+            # Créer/mettre à jour prix
+            valeur = it.get('prix_unitaire') or it.get('prix_detail')
+            if valeur is not None:
+                p, created_price = Prix.objects.update_or_create(
+                    produit=produit,
+                    magasin=magasin,
+                    defaults={
                         'prix_actuel': valeur,
                         'devise': it.get('devise', 'FCFA'),
                         'type_prix': it.get('type_prix', 'detail'),
@@ -2252,39 +2141,11 @@ class DgccrfScraper:
                         'source_prix': 'dgccrf',
                         'est_disponible': True,
                     }
-                    
-                    # Créer ou mettre à jour le prix
-                    p, created_price = Prix.objects.update_or_create(
-                        produit=produit,
-                        magasin=magasin,
-                        defaults=prix_data
-                    )
-                    
-                    # Si c'est une création, incrémenter le compteur
-                    if created_price:
-                        created_prix += 1
-                    # Si c'est une mise à jour, vérifier si le prix a changé
-                    elif p.prix_actuel != valeur:
-                        self.logger.info(f"Mise à jour du prix pour {produit.nom}: {p.prix_actuel} -> {valeur} {prix_data['devise']}")
-                    
-            except Exception as e:
-                self.logger.error(f"Erreur lors de la création/mise à jour du prix pour {nom}: {e}")
-                continue  # Continuer avec le produit suivant en cas d'erreur
-                    
-        except Exception as e:
-            self.logger.error(f"Erreur lors de la transaction: {e}")
-            raise  # La transaction sera rollback automatiquement
-            
-        # Journaliser les résultats
-        duration = time.time() - start_time
-        self.logger.info(
-            f"Persistance terminée - "
-            f"Produits: {created_prod} créés, "
-            f"Prix: {created_prix} créés/mis à jour "
-            f"(en {duration:.2f}s)"
-        )
-        
-        return created_prod, created_prix
+                )
+                if created_price:
+                    created_prix += 1
+
+        return (created_prod, created_prix)
 
 
 def run_scrape(out: Optional[str] = None, limit: Optional[int] = None, sources: Optional[List[str]] = None, save: bool = SAVE_TO_DB, checkpoint: Optional[str] = None, auto_urls: Optional[List[str]] = None, unified: bool = False, csv_out: Optional[str] = None, sql_out: Optional[str] = None, report_out: Optional[str] = None, only_changed: Optional[bool] = None) -> int:

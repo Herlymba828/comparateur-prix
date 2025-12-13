@@ -9,9 +9,12 @@ from .views import (
     TestConnectionView
 )
 from .views_nearby import prix_proches_public
+from .views_diagnostic import diagnostic_api, endpoints_list
 
 urlpatterns = [
     path('health/', health, name='api-health'),
+    path('diagnostic/', diagnostic_api, name='api-diagnostic'),
+    path('endpoints/', endpoints_list, name='api-endpoints'),
     path('test-connection/', TestConnectionView.as_view(), name='api-test-connection'),
     path('search/produits/', search_produits, name='api-search-produits'),
     path('search/autocomplete/', autocomplete_produits, name='api-autocomplete-produits'),

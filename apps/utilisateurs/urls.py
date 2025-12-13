@@ -25,7 +25,9 @@ urlpatterns = [
     path('api/auth/verify/', views.verify_token, name='auth-verify'),
     # Endpoints de réinitialisation de mot de passe
     path('api/auth/password/reset/', views.demander_reset_mot_de_passe, name='auth-password-reset'),
+    path('api/auth/password/reset/verify/<str:token>/', views.verifier_token_reset_view, name='auth-password-reset-verify'),
     path('api/auth/password/reset/confirm/<str:token>/', views.confirmer_reset_mot_de_passe, name='auth-password-reset-confirm'),
+    path('api/auth/password/change/', views.changer_mot_de_passe, name='auth-password-change'),
     # Anciens endpoints (pour compatibilité)
     path('api/auth/mot-de-passe/demander/', views.demander_reset_mot_de_passe, name='auth-mot-de-passe-demander'),
     path('api/auth/mot-de-passe/confirmer/<str:token>/', views.confirmer_reset_mot_de_passe, name='auth-mot-de-passe-confirmer'),

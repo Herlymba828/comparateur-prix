@@ -106,11 +106,36 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
             return MiseAJourUtilisateurSerializer
         return self.serializer_class
     
+    @action(detail=False, methods=['post'], permission_classes=[permissions.AllowAny])
+    def check_email(self, request):
+        """Vérifie si un email est déjà utilisé"""
+        email = request.data.get('email', '').lower().strip()
+        if not email:
+            return Response(
+                {'error': 'Le champ email est requis.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        exists = Utilisateur.objects.filter(email__iexact=email).exists()
+        return Response({
+            'email': email,
+            'exists': exists,
+            'message': 'Un compte avec cet email existe déjà.' if exists else 'Email disponible.'
+        })
+    
     def create(self, request, *args, **kwargs):
         """Créer un nouvel utilisateur avec gestion d'erreurs robuste"""
         from django.db import connection, DatabaseError, OperationalError
         from requests.exceptions import ConnectionError as RequestsConnectionError
         
+        # Vérifier d'abord si l'email existe déjà
+        email = request.data.get('email', '').lower().strip()
+        if email and Utilisateur.objects.filter(email__iexact=email).exists():
+            return Response(
+                {'email': ['Un utilisateur avec cet email existe déjà.']},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
         # Log de début pour confirmer que la requête arrive
         print(f"[INFO] POST /api/utilisateurs/ - Début création utilisateur", file=sys.stdout, flush=True)
         print(f"[INFO] Données reçues: {request.data}", file=sys.stdout, flush=True)
@@ -1018,7 +1043,7 @@ class LoginView(APIView):
             pass
         return Response({'user': user_payload})
 
-from rest_framework.decorators import api_view, permission_classes  # noqa: E402
+from rest_framework.decorators import api_view, permission_classes, action  # noqa: E402
 from django.contrib.sessions.models import Session  # noqa: E402
 try:
     from rest_framework_simplejwt.tokens import OutstandingToken, BlacklistedToken  # noqa: E402
@@ -1059,23 +1084,93 @@ def demander_reset_mot_de_passe(request):
         pass  # Ne pas révéler l'existence
     return Response({'detail': 'Si un compte existe pour cet email, un lien de réinitialisation a été envoyé.'})
 
-@api_view(["POST"]) 
+@api_view(["GET"])
+@permission_classes([permissions.AllowAny])
+def verifier_token_reset_view(request, token: str):
+    """Vérifie si un token de réinitialisation est valide"""
+    data = verifier_token_reset(token)
+    if not data:
+        return Response(
+            {'valid': False, 'message': 'Token invalide ou expiré.'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    try:
+        Utilisateur.objects.get(id=data['uid'], email=data['email'])
+        return Response({'valid': True, 'message': 'Token valide.'})
+    except Utilisateur.DoesNotExist:
+        return Response(
+            {'valid': False, 'message': 'Utilisateur introuvable.'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def changer_mot_de_passe(request):
+    """Permet à un utilisateur connecté de changer son mot de passe"""
+    from .serializers import ChangementMotDePasseSerializer
+    
+    serializer = ChangementMotDePasseSerializer(
+        data=request.data,
+        context={'request': request}
+    )
+    
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    request.user.set_password(serializer.validated_data['nouveau_mot_de_passe'])
+    request.user.save()
+    
+    # Invalider les tokens JWT existants
+    if HAS_JWT and RefreshToken is not None:
+        try:
+            RefreshToken.for_user(request.user)
+        except Exception as e:
+            logger.warning(f"Erreur lors de l'invalidation des tokens JWT: {e}")
+    
+    return Response(
+        {'detail': 'Votre mot de passe a été modifié avec succès.'},
+        status=status.HTTP_200_OK
+    )
+
+@api_view(["POST"])
 @permission_classes([permissions.AllowAny])
 def confirmer_reset_mot_de_passe(request, token: str):
     """Confirme la réinitialisation via token valide et définit le nouveau mot de passe."""
     from .serializers import ConfirmationResetMotDePasseSerializer
     data_token = verifier_token_reset(token)
     if not data_token:
-        return Response({'detail': 'Token invalide ou expiré.'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'detail': 'Le lien de réinitialisation est invalide ou a expiré.'}, 
+                       status=status.HTTP_400_BAD_REQUEST)
+    
     try:
         utilisateur = Utilisateur.objects.get(id=data_token['uid'], email=data_token['email'])
     except Utilisateur.DoesNotExist:
-        return Response({'detail': 'Utilisateur introuvable.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(
+            {'detail': 'Utilisateur introuvable.'}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Valider les données du nouveau mot de passe
     serializer = ConfirmationResetMotDePasseSerializer(data=request.data)
-    serializer.is_valid(raise_exception=True)
-    utilisateur.set_password(serializer.validated_data['nouveau_mot_de_passe'])
-    utilisateur.save(update_fields=['password'])
-    return Response({'detail': 'Mot de passe réinitialisé avec succès.'})
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Mettre à jour le mot de passe
+    nouveau_mot_de_passe = serializer.validated_data['nouveau_mot_de_passe']
+    utilisateur.set_password(nouveau_mot_de_passe)
+    utilisateur.save()
+    
+    # Invalider tous les tokens de l'utilisateur
+    if HAS_JWT and RefreshToken is not None:
+        try:
+            RefreshToken.for_user(utilisateur)
+        except Exception as e:
+            logger.warning(f"Erreur lors de l'invalidation des tokens JWT: {e}")
+    
+    return Response(
+        {'detail': 'Votre mot de passe a été réinitialisé avec succès.'},
+        status=status.HTTP_200_OK
+    )
 
 @api_view(["GET"])
 @permission_classes([permissions.IsAuthenticated])

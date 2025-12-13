@@ -28,10 +28,18 @@ class InscriptionSerializer(serializers.ModelSerializer):
         return value
     
     def validate_email(self, value):
-        """Valider l'unicité de l'email"""
-        if Utilisateur.objects.filter(email__iexact=value).exists():
-            raise serializers.ValidationError(_('Un utilisateur avec cet email existe déjà.'))
-        return value.lower().strip() if value else value
+        """Valider l'unicité de l'email avec message détaillé"""
+        if not value:
+            raise serializers.ValidationError(_('L\'email est requis.'))
+        
+        email_normalized = value.lower().strip()
+        
+        if Utilisateur.objects.filter(email__iexact=email_normalized).exists():
+            raise serializers.ValidationError(
+                _('Un compte avec cet email existe déjà. '
+                  'Utilisez un autre email ou connectez-vous avec vos identifiants existants.')
+            )
+        return email_normalized
     
     def validate_telephone(self, value):
         """Valider et normaliser le numéro de téléphone"""
