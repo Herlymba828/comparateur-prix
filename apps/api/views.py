@@ -58,6 +58,33 @@ def health(request):
     return JsonResponse(health_status, status=status_code)
 
 
+def test_simple(request):
+    """
+    Endpoint de test ultra-simple pour diagnostic.
+    """
+    from apps.produits.models import Produit, Categorie
+    
+    try:
+        produits_count = Produit.objects.count()
+        categories_count = Categorie.objects.count()
+        
+        return JsonResponse({
+            "status": "ok",
+            "message": "Test simple réussi",
+            "database": {
+                "produits": produits_count,
+                "categories": categories_count
+            },
+            "timestamp": datetime.now().isoformat()
+        })
+    except Exception as e:
+        return JsonResponse({
+            "status": "error",
+            "message": str(e),
+            "timestamp": datetime.now().isoformat()
+        }, status=500)
+
+
 class TestConnectionView(APIView):
     permission_classes = [AllowAny]
     

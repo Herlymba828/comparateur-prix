@@ -1,6 +1,7 @@
 from django.urls import path
 from .views import (
-    health, 
+    health,
+    test_simple,
     search_produits, 
     autocomplete_produits, 
     homologations_stats, 
@@ -14,6 +15,7 @@ from .views_admin import populate_database, reset_database, database_stats
 
 urlpatterns = [
     path('health/', health, name='api-health'),
+    path('test-simple/', test_simple, name='api-test-simple'),
     path('diagnostic/', diagnostic_api, name='api-diagnostic'),
     path('endpoints/', endpoints_list, name='api-endpoints'),
     path('test-connection/', TestConnectionView.as_view(), name='api-test-connection'),
