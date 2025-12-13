@@ -521,8 +521,9 @@ if not ADMIN_URL.endswith('/'):
 if not DEBUG:
     # Vérifier si on utilise DATABASE_PUBLIC_URL/DATABASE_URL ou des variables individuelles
     using_database_url = bool(os.getenv('DATABASE_PUBLIC_URL') or os.getenv('DATABASE_URL'))
-    db_password = DATABASES['default'].get('PASSWORD', '') if not using_database_url else None
+    db_password = DATABASES['default'].get('PASSWORD', '')
     
+    # Si on utilise DATABASE_URL, le mot de passe est déjà dans l'URL, pas besoin de vérifier
     if not using_database_url and not db_password:
         # Déterminer le nom de la variable d'environnement attendue selon le type de DB
         if DB_ENGINE == 'mysql':
