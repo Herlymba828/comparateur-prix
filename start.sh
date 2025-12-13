@@ -37,21 +37,25 @@ else
     echo "   L'application démarre quand même"
 fi
 
-# Démarrer Celery Worker en arrière-plan (optionnel - ne pas faire échouer si Redis n'est pas disponible)
-echo "🔄 Démarrage de Celery Worker..."
-if celery -A config worker -l info --detach 2>/dev/null; then
-    echo "✅ Celery Worker démarré"
-else
-    echo "⚠️  Celery Worker non démarré (Redis peut-être indisponible)"
-fi
+# Désactiver temporairement Celery pour diagnostiquer le problème
+echo "⚠️  Celery Worker désactivé temporairement pour diagnostic"
+echo "⚠️  Celery Beat désactivé temporairement pour diagnostic"
 
-# Démarrer Celery Beat en arrière-plan (optionnel - ne pas faire échouer si Redis n'est pas disponible)
-echo "⏰ Démarrage de Celery Beat..."
-if celery -A config beat -l info --detach 2>/dev/null; then
-    echo "✅ Celery Beat démarré"
-else
-    echo "⚠️  Celery Beat non démarré (Redis peut-être indisponible)"
-fi
+# # Démarrer Celery Worker en arrière-plan (optionnel - ne pas faire échouer si Redis n'est pas disponible)
+# echo "🔄 Démarrage de Celery Worker..."
+# if celery -A config worker -l info --detach 2>/dev/null; then
+#     echo "✅ Celery Worker démarré"
+# else
+#     echo "⚠️  Celery Worker non démarré (Redis peut-être indisponible)"
+# fi
+
+# # Démarrer Celery Beat en arrière-plan (optionnel - ne pas faire échouer si Redis n'est pas disponible)
+# echo "⏰ Démarrage de Celery Beat..."
+# if celery -A config beat -l info --detach 2>/dev/null; then
+#     echo "✅ Celery Beat démarré"
+# else
+#     echo "⚠️  Celery Beat non démarré (Redis peut-être indisponible)"
+# fi
 
 # Démarrer Gunicorn (c'est la partie critique - doit toujours démarrer)
 echo "✅ Démarrage du serveur Gunicorn..."
