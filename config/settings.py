@@ -276,19 +276,19 @@ MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',  # Doit être placé avant CommonMiddleware
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
-    'config.middleware.CompressionMiddleware',  # Compression optimisée (remplace GZipMiddleware)
-    'apps.api.compression_middleware.SmartCompressionMiddleware',  # NOUVEAU: Compression gzip intelligente
-    'apps.api.compression_middleware.JSONMinificationMiddleware',  # NOUVEAU: Minification JSON
+    # 'config.middleware.CompressionMiddleware',  # Désactivé temporairement pour diagnostic
+    # 'apps.api.compression_middleware.SmartCompressionMiddleware',  # Désactivé temporairement
+    # 'apps.api.compression_middleware.JSONMinificationMiddleware',  # Désactivé temporairement
     'django.middleware.http.ConditionalGetMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'social_django.middleware.SocialAuthExceptionMiddleware',
     'django_otp.middleware.OTPMiddleware',
-    'apps.utilisateurs.middleware.AuthErrorEnhancementMiddleware',  # Améliore les réponses 401
-    'apps.api.middleware.PerformanceMonitoringMiddleware',  # NOUVEAU: Monitoring des performances
+    # 'apps.utilisateurs.middleware.AuthErrorEnhancementMiddleware',  # Désactivé temporairement
+    # 'apps.api.middleware.PerformanceMonitoringMiddleware',  # Désactivé temporairement pour diagnostic
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'config.middleware.JSONExceptionMiddleware',  # Doit être en dernier pour intercepter toutes les exceptions
+    # 'config.middleware.JSONExceptionMiddleware',  # Désactivé temporairement pour diagnostic
 ]
 
 ROOT_URLCONF = 'config.urls'
