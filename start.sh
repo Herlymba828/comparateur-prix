@@ -70,17 +70,6 @@ echo "   ⏱️  Timeout: 120s"
 # L'endpoint /api/health/ et / ne nécessitent pas de base de données, donc ils répondront immédiatement
 
 # Utiliser exec pour que Gunicorn remplace le processus shell
-# Ajouter des options pour améliorer la stabilité
-# Note: Railway fait un health check automatique, donc on doit s'assurer que l'application répond rapidement
-exec gunicorn config.wsgi:application \
-    --bind 0.0.0.0:$PORT \
-    --workers 2 \
-    --timeout 120 \
-    --keep-alive 5 \
-    --max-requests 1000 \
-    --max-requests-jitter 50 \
-    --access-logfile - \
-    --error-logfile - \
-    --log-level info \
-    --preload
+# Utiliser le fichier de configuration pour plus de logging
+exec gunicorn config.wsgi:application --config gunicorn_config.py
 
