@@ -523,10 +523,20 @@ if not DEBUG:
     using_database_url = bool(os.getenv('DATABASE_PUBLIC_URL') or os.getenv('DATABASE_URL'))
     db_password = DATABASES['default'].get('PASSWORD', '')
     
-    # Si on utilise DATABASE_URL, le mot de passe est déjà dans l'URL, pas besoin de vérifier
-    if not using_database_url and not db_password:
+    # Si on utilise DATABASE_URL, le mot de passe est déjà dans l'URL parsée - ne pas valider
+    # Sinon, vérifier que le mot de passe est défini via les variables d'environnement
+    if using_database_url:
+        # DATABASE_URL est utilisé, le mot de passe est dans l'URL - pas de validation nécessaire
+        pass
+    elif not db_password:
         # Déterminer le nom de la variable d'environnement attendue selon le type de DB
-        if DB_ENGINE == 'mysql':
+        try:
+            db_engine_var = DB_ENGINE
+        except NameError:
+            # Si DB_ENGINE n'existe pas, détecter depuis DATABASES
+            db_engine_var = 'postgresql' if 'postgresql' in DATABASES['default']['ENGINE'] else 'mysql'
+        
+        if db_engine_var == 'mysql':
             expected_var = 'DB_PASSWORD ou MYSQL_PASSWORD'
         else:
             expected_var = 'DB_PASSWORD ou POSTGRES_PASSWORD'
@@ -538,7 +548,7 @@ if not DEBUG:
         
         error_msg = (
             f'Le mot de passe de la base de données doit être défini en production.\n'
-            f'Type de DB détecté: {DB_ENGINE.upper()}\n'
+            f'Type de DB détecté: {db_engine_var.upper()}\n'
             f'Variables d\'environnement vérifiées:\n'
             f'  - DB_PASSWORD: {"présente" if db_password_present else "absente"}\n'
             f'  - POSTGRES_PASSWORD: {"présente" if postgres_password_present else "absente"}\n'
