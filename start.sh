@@ -71,5 +71,6 @@ echo "   ⏱️  Timeout: 120s"
 
 # Utiliser exec pour que Gunicorn remplace le processus shell
 # Utiliser le fichier de configuration pour plus de logging
-exec gunicorn config.wsgi:application --config gunicorn_config.py
+# TEMPORAIRE: Utiliser wsgi_debug pour voir exactement où ça plante
+exec gunicorn config.wsgi_debug:application --config gunicorn_config.py
 
