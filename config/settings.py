@@ -1003,8 +1003,8 @@ if USE_REDIS_CACHE:
             'BACKEND': 'django.core.cache.backends.redis.RedisCache',
             'LOCATION': REDIS_CACHE_URL,
             'OPTIONS': {
-                'SOCKET_CONNECT_TIMEOUT': 5,  # Majuscules pour redis 4.x
-                'SOCKET_TIMEOUT': 5,  # Majuscules pour redis 4.x
+                # Pas de paramètres de timeout ici - ils causent des erreurs avec certaines versions
+                # Le timeout par défaut de Redis est suffisant
             },
             'KEY_PREFIX': 'comparateur_prix',
             # Note: Using Django's built-in RedisCache backend with redis 4.6.0
