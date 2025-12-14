@@ -714,7 +714,8 @@ if USE_JWT_AUTH:
         DEFAULT_AUTH_CLASSES = []
 
 # Configuration REST Framework (unifiée)
-_default_perms = ['rest_framework.permissions.AllowAny'] if DEBUG else ['rest_framework.permissions.IsAuthenticatedOrReadOnly']
+# TEMPORAIRE: AllowAny en production pour diagnostic
+_default_perms = ['rest_framework.permissions.AllowAny']  # if DEBUG else ['rest_framework.permissions.IsAuthenticatedOrReadOnly']
 
 # Classes d'authentification par défaut
 _default_auth_classes = DEFAULT_AUTH_CLASSES.copy()
@@ -996,8 +997,8 @@ if USE_REDIS_CACHE:
             'BACKEND': 'django.core.cache.backends.redis.RedisCache',
             'LOCATION': REDIS_CACHE_URL,
             'OPTIONS': {
-                'SOCKET_CONNECT_TIMEOUT': 5,
-                'SOCKET_TIMEOUT': 5,
+                'socket_connect_timeout': 5,  # Minuscules pour redis 5.x
+                'socket_timeout': 5,  # Minuscules pour redis 5.x
             },
             'KEY_PREFIX': 'comparateur_prix',
             # Note: Using Django's built-in RedisCache backend. Do not pass django-redis 'client_class' here.
