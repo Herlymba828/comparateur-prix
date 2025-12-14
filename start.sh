@@ -37,34 +37,14 @@ else
     echo "   L'application démarre quand même"
 fi
 
-# Vérifier si Redis est disponible avant de démarrer Celery
-echo "🔄 Vérification de la connexion Redis..."
-if [ -n "$CELERY_BROKER_URL" ] && [ "$CELERY_BROKER_URL" != '${REDIS_URL}' ]; then
-    echo "   CELERY_BROKER_URL défini: ${CELERY_BROKER_URL:0:30}..."
-    
-    # Démarrer Celery Worker en arrière-plan
-    echo "🔄 Démarrage de Celery Worker..."
-    celery -A config worker -l warning --detach --pidfile=/tmp/celery_worker.pid 2>&1 || true
-    sleep 2
-    if [ -f /tmp/celery_worker.pid ] && kill -0 $(cat /tmp/celery_worker.pid) 2>/dev/null; then
-        echo "✅ Celery Worker démarré (PID: $(cat /tmp/celery_worker.pid))"
-    else
-        echo "⚠️  Celery Worker non démarré (vérifiez la connexion Redis)"
-    fi
-
-    # Démarrer Celery Beat en arrière-plan
-    echo "⏰ Démarrage de Celery Beat..."
-    celery -A config beat -l warning --detach --pidfile=/tmp/celery_beat.pid 2>&1 || true
-    sleep 1
-    if [ -f /tmp/celery_beat.pid ] && kill -0 $(cat /tmp/celery_beat.pid) 2>/dev/null; then
-        echo "✅ Celery Beat démarré (PID: $(cat /tmp/celery_beat.pid))"
-    else
-        echo "⚠️  Celery Beat non démarré (vérifiez la connexion Redis)"
-    fi
-else
-    echo "⚠️  CELERY_BROKER_URL non défini ou invalide - Celery désactivé"
-    echo "   Pour activer Celery, définissez CELERY_BROKER_URL avec une URL Redis valide"
-fi
+# ⚠️  CELERY DÉSACTIVÉ EN PRODUCTION RAILWAY
+# Raison: --detach crée des processus orphelins que Railway ne peut pas monitorer
+# Solution: Créer des services Celery séparés dans Railway si nécessaire
+# Pour l'instant, Celery est désactivé pour éviter les crashes silencieux
+echo "ℹ️  Celery Worker et Beat désactivés (à configurer comme services séparés si nécessaire)"
+echo "   Pour activer Celery, créez des services séparés dans Railway:"
+echo "   - Service 'celery-worker': celery -A config worker -l info"
+echo "   - Service 'celery-beat': celery -A config beat -l info"
 
 # Démarrer Gunicorn (c'est la partie critique - doit toujours démarrer)
 echo "✅ Démarrage du serveur Gunicorn..."
