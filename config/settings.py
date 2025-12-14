@@ -991,6 +991,12 @@ else:
     elif not REDIS_CACHE_URL:
         logger.info("Aucune URL Redis configurée, utilisation du cache local (LocMemCache)")
 
+# Permettre de forcer le cache local via variable d'environnement (utile pour le débogage)
+FORCE_LOCAL_CACHE = os.getenv('FORCE_LOCAL_CACHE', 'False').lower() in ('true', '1', 'yes')
+if FORCE_LOCAL_CACHE:
+    USE_REDIS_CACHE = False
+    logger.warning("⚠️  FORCE_LOCAL_CACHE activé, utilisation du cache local même si Redis est disponible")
+
 if USE_REDIS_CACHE:
     CACHES = {
         'default': {
