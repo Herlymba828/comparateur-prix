@@ -2,7 +2,7 @@ Django==5.1.2
 djangorestframework==3.15.2
 django-filter==24.3
 celery==5.3.4
-redis==5.0.1
+redis==5.0.1  # Version compatible avec django-redis 5.4.0
 gunicorn==21.2.0
 requests==2.31.0
 beautifulsoup4==4.12.2
