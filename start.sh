@@ -37,20 +37,33 @@ else
     echo "   L'application démarre quand même"
 fi
 
-# Démarrer Celery Worker en arrière-plan (optionnel - ne pas faire échouer si Redis n'est pas disponible)
-echo "🔄 Démarrage de Celery Worker..."
-if celery -A config worker -l info --detach 2>/dev/null; then
-    echo "✅ Celery Worker démarré"
-else
-    echo "⚠️  Celery Worker non démarré (Redis peut-être indisponible)"
-fi
+# Vérifier si Redis est disponible avant de démarrer Celery
+echo "🔄 Vérification de la connexion Redis..."
+if [ -n "$CELERY_BROKER_URL" ] && [ "$CELERY_BROKER_URL" != '${REDIS_URL}' ]; then
+    echo "   CELERY_BROKER_URL défini: ${CELERY_BROKER_URL:0:30}..."
+    
+    # Démarrer Celery Worker en arrière-plan
+    echo "🔄 Démarrage de Celery Worker..."
+    celery -A config worker -l warning --detach --pidfile=/tmp/celery_worker.pid 2>&1 || true
+    sleep 2
+    if [ -f /tmp/celery_worker.pid ] && kill -0 $(cat /tmp/celery_worker.pid) 2>/dev/null; then
+        echo "✅ Celery Worker démarré (PID: $(cat /tmp/celery_worker.pid))"
+    else
+        echo "⚠️  Celery Worker non démarré (vérifiez la connexion Redis)"
+    fi
 
-# Démarrer Celery Beat en arrière-plan (optionnel - ne pas faire échouer si Redis n'est pas disponible)
-echo "⏰ Démarrage de Celery Beat..."
-if celery -A config beat -l info --detach 2>/dev/null; then
-    echo "✅ Celery Beat démarré"
+    # Démarrer Celery Beat en arrière-plan
+    echo "⏰ Démarrage de Celery Beat..."
+    celery -A config beat -l warning --detach --pidfile=/tmp/celery_beat.pid 2>&1 || true
+    sleep 1
+    if [ -f /tmp/celery_beat.pid ] && kill -0 $(cat /tmp/celery_beat.pid) 2>/dev/null; then
+        echo "✅ Celery Beat démarré (PID: $(cat /tmp/celery_beat.pid))"
+    else
+        echo "⚠️  Celery Beat non démarré (vérifiez la connexion Redis)"
+    fi
 else
-    echo "⚠️  Celery Beat non démarré (Redis peut-être indisponible)"
+    echo "⚠️  CELERY_BROKER_URL non défini ou invalide - Celery désactivé"
+    echo "   Pour activer Celery, définissez CELERY_BROKER_URL avec une URL Redis valide"
 fi
 
 # Démarrer Gunicorn (c'est la partie critique - doit toujours démarrer)
