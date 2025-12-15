@@ -20,15 +20,15 @@ fi
 
 # Démarrer Celery Worker
 # --loglevel=info : Logs détaillés
-# --concurrency=4 : 4 workers concurrents
-# --max-tasks-per-child=1000 : Recycler les workers après 1000 tâches
+# --concurrency=1 : 1 worker seulement
+# --max-tasks-per-child=1000 : Recycler le worker après 1000 tâches
 # --time-limit=3600 : Timeout de 1 heure par tâche
 # --soft-time-limit=3300 : Soft timeout de 55 minutes
 
-echo "⏳ Démarrage du worker Celery..."
+echo "⏳ Démarrage du worker Celery (1 worker)..."
 exec celery -A config worker \
     --loglevel=info \
-    --concurrency=4 \
+    --concurrency=1 \
     --max-tasks-per-child=1000 \
     --time-limit=3600 \
     --soft-time-limit=3300 \
