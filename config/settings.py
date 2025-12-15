@@ -525,10 +525,7 @@ if not DEBUG:
     
     # Si on utilise DATABASE_URL, le mot de passe est déjà dans l'URL parsée - ne pas valider
     # Sinon, vérifier que le mot de passe est défini via les variables d'environnement
-    if using_database_url:
-        # DATABASE_URL est utilisé, le mot de passe est dans l'URL - pas de validation nécessaire
-        pass
-    elif not db_password:
+    if not using_database_url and not db_password:
         # Déterminer le nom de la variable d'environnement attendue selon le type de DB
         try:
             db_engine_var = DB_ENGINE
